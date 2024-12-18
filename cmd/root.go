@@ -5,11 +5,17 @@ package cmd
 
 import (
 	"fmt"
+	"net/http"
 	"os"
+	"time"
 
+	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"github.com/zzjcool/mqtt-benchmark/internal/logger"
 	"github.com/zzjcool/mqtt-benchmark/internal/mqtt"
+	"github.com/zzjcool/mqtt-benchmark/internal/metrics"
+	"go.uber.org/zap"
+	"runtime"
 )
 
 const (
@@ -22,6 +28,7 @@ const (
 	FlagKeepAlive      = "keepalive"
 	FlagRetryConnect   = "num-retry-connect"
 	FlagConnRate       = "connrate"
+	FlagMetricsPort    = "metrics-port"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -37,6 +44,20 @@ of MQTT broker performance including connection handling, publishing, and subscr
 			fmt.Printf("Failed to initialize logger: %v\n", err)
 			os.Exit(1)
 		}
+
+		// Start metrics server
+		metricsPort, _ := cmd.Flags().GetInt(FlagMetricsPort)
+		go func() {
+			http.Handle("/metrics", promhttp.Handler())
+			addr := fmt.Sprintf(":%d", metricsPort)
+			logger.GetLogger().Info("Starting metrics server", zap.String("addr", addr))
+			if err := http.ListenAndServe(addr, nil); err != nil {
+				logger.GetLogger().Error("Metrics server error", zap.Error(err))
+			}
+		}()
+
+		// Start resource monitoring
+		monitorResourceUsage(time.Second)
 	},
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
@@ -75,6 +96,22 @@ func init() {
 	rootCmd.PersistentFlags().Int(FlagKeepAlive, 60, "keepalive interval in seconds")
 	rootCmd.PersistentFlags().Int(FlagRetryConnect, 0, "number of times to retry establishing a connection before giving up")
 	rootCmd.PersistentFlags().IntP(FlagConnRate, "R", 0, "connection rate(/s), default: 0")
+
+	// Add metrics flag
+	rootCmd.PersistentFlags().Int(FlagMetricsPort, 2112, "Port to expose Prometheus metrics")
+}
+
+// monitorResourceUsage periodically collects and updates system resource metrics
+func monitorResourceUsage(interval time.Duration) {
+	ticker := time.NewTicker(interval)
+	go func() {
+		var m runtime.MemStats
+		for range ticker.C {
+			runtime.ReadMemStats(&m)
+			metrics.MQTTMemoryUsage.Set(float64(m.Alloc))
+			metrics.MQTTCPUUsage.Set(float64(runtime.NumGoroutine()) / 100.0)
+		}
+	}()
 }
 
 func fillMqttOptions(cmd *cobra.Command) *mqtt.Options {

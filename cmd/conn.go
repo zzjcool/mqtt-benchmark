@@ -4,16 +4,10 @@ Copyright 2024 NAME HERE <EMAIL ADDRESS>
 package cmd
 
 import (
-	"fmt"
-	"net/http"
 	"os"
-	"runtime"
-	"time"
 
-	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"github.com/zzjcool/mqtt-benchmark/internal/logger"
-	"github.com/zzjcool/mqtt-benchmark/internal/metrics"
 	internalmqtt "github.com/zzjcool/mqtt-benchmark/internal/mqtt"
 	"go.uber.org/zap"
 )
@@ -30,16 +24,6 @@ connection rate, number of clients, and authentication settings.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		log := logger.GetLogger()
 
-		// Start metrics server in a goroutine
-		go func() {
-			http.Handle("/metrics", promhttp.Handler())
-			addr := fmt.Sprintf(":%d", metricsPort)
-			log.Info("Starting metrics server", zap.String("addr", addr))
-			if err := http.ListenAndServe(addr, nil); err != nil {
-				log.Error("Metrics server error", zap.Error(err))
-			}
-		}()
-
 		// 获取保持连接时间
 		keepTime, _ := cmd.Flags().GetInt("keep-time")
 
@@ -48,9 +32,6 @@ connection rate, number of clients, and authentication settings.`,
 
 		// 创建连接管理器
 		connManager := internalmqtt.NewConnectionManager(options, keepTime)
-
-		// 启动资源监控
-		monitorResourceUsage(time.Second)
 
 		// 运行连接测试
 		if err := connManager.RunConnections(); err != nil {
@@ -66,23 +47,7 @@ connection rate, number of clients, and authentication settings.`,
 	},
 }
 
-func monitorResourceUsage(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	go func() {
-		var m runtime.MemStats
-		for range ticker.C {
-			runtime.ReadMemStats(&m)
-			metrics.MQTTMemoryUsage.Set(float64(m.Alloc))
-
-			// 这里我们只是简单地计算 CPU 使用率
-			// 在实际生产环境中，你可能需要更复杂的 CPU 使用率计算
-			metrics.MQTTCPUUsage.Set(float64(runtime.NumGoroutine()) / 100.0)
-		}
-	}()
-}
-
 func init() {
 	rootCmd.AddCommand(connCmd)
-	connCmd.Flags().IntVar(&metricsPort, "metrics-port", 2112, "Port to expose Prometheus metrics")
 	connCmd.Flags().Int("keep-time", 0, "Time to keep connections alive after all connections are established (in seconds). 0: don't keep, -1: keep forever. Example: --keep-time=60")
 }
