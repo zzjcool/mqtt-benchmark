@@ -7,15 +7,12 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"time"
 
-	"runtime"
 	_ "net/http/pprof"
 
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"github.com/zzjcool/mqtt-benchmark/internal/logger"
-	"github.com/zzjcool/mqtt-benchmark/internal/metrics"
 	"github.com/zzjcool/mqtt-benchmark/internal/mqtt"
 	"go.uber.org/zap"
 )
@@ -71,9 +68,6 @@ of MQTT broker performance including connection handling, publishing, and subscr
 				}
 			}()
 		}
-
-		// Start resource monitoring
-		monitorResourceUsage(time.Second)
 	},
 	// Uncomment the following line if your bare application
 	// has an action associated with it:
@@ -116,19 +110,6 @@ func init() {
 	// Add metrics flag
 	rootCmd.PersistentFlags().Int(FlagMetricsPort, 2112, "Port to expose Prometheus metrics")
 	rootCmd.PersistentFlags().Int(FlagPprofPort, 0, "pprof port, 0 means disabled")
-}
-
-// monitorResourceUsage periodically collects and updates system resource metrics
-func monitorResourceUsage(interval time.Duration) {
-	ticker := time.NewTicker(interval)
-	go func() {
-		var m runtime.MemStats
-		for range ticker.C {
-			runtime.ReadMemStats(&m)
-			metrics.MQTTMemoryUsage.Set(float64(m.Alloc))
-			metrics.MQTTCPUUsage.Set(float64(runtime.NumGoroutine()) / 100.0)
-		}
-	}()
 }
 
 func fillMqttOptions(cmd *cobra.Command) *mqtt.Options {

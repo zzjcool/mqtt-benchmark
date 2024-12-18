@@ -40,17 +40,6 @@ var (
 		Help: "The total number of new MQTT connections established",
 	}, []string{"broker"})
 
-	// Resource metrics
-	MQTTMemoryUsage = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "mqtt_benchmark_memory_bytes",
-		Help: "Current memory usage of the benchmark process",
-	})
-
-	MQTTCPUUsage = promauto.NewGauge(prometheus.GaugeOpts{
-		Name: "mqtt_benchmark_cpu_usage",
-		Help: "Current CPU usage percentage of the benchmark process",
-	})
-
 	// Connection pool metrics
 	MQTTConnectionPoolSize = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "mqtt_benchmark_connection_pool_size",
