@@ -72,4 +72,36 @@ var (
 		Help:    "The latency of MQTT messages",
 		Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // from 1ms to ~1s
 	})
+
+	// Publish metrics
+	MQTTPublishTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "mqtt_benchmark_publish_total",
+		Help: "The total number of publish attempts",
+	})
+
+	MQTTPublishSuccessTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "mqtt_benchmark_publish_success_total",
+		Help: "The total number of successful publishes",
+	})
+
+	MQTTPublishFailureTotal = promauto.NewCounter(prometheus.CounterOpts{
+		Name: "mqtt_benchmark_publish_failure_total",
+		Help: "The total number of failed publishes",
+	})
+
+	MQTTPublishRate = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "mqtt_benchmark_publish_rate",
+		Help: "The configured publish rate (messages per second)",
+	})
+
+	MQTTPublishActualRate = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "mqtt_benchmark_publish_actual_rate",
+		Help: "The actual publish rate (messages per second)",
+	})
+
+	MQTTPublishLatency = promauto.NewHistogram(prometheus.HistogramOpts{
+		Name:    "mqtt_benchmark_publish_latency_seconds",
+		Help:    "Time taken to publish messages",
+		Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // from 1ms to ~1s
+	})
 )
