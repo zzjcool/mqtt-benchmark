@@ -9,13 +9,15 @@ import (
 	"os"
 	"time"
 
+	"runtime"
+	_ "net/http/pprof"
+
 	"github.com/prometheus/client_golang/prometheus/promhttp"
 	"github.com/spf13/cobra"
 	"github.com/zzjcool/mqtt-benchmark/internal/logger"
-	"github.com/zzjcool/mqtt-benchmark/internal/mqtt"
 	"github.com/zzjcool/mqtt-benchmark/internal/metrics"
+	"github.com/zzjcool/mqtt-benchmark/internal/mqtt"
 	"go.uber.org/zap"
-	"runtime"
 )
 
 const (
@@ -29,6 +31,7 @@ const (
 	FlagRetryConnect   = "num-retry-connect"
 	FlagConnRate       = "connrate"
 	FlagMetricsPort    = "metrics-port"
+	FlagPprofPort      = "pprof-port"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -48,13 +51,26 @@ of MQTT broker performance including connection handling, publishing, and subscr
 		// Start metrics server
 		metricsPort, _ := cmd.Flags().GetInt(FlagMetricsPort)
 		go func() {
-			http.Handle("/metrics", promhttp.Handler())
+			mux := http.NewServeMux()
+			mux.Handle("/metrics", promhttp.Handler())
 			addr := fmt.Sprintf(":%d", metricsPort)
 			logger.GetLogger().Info("Starting metrics server", zap.String("addr", addr))
-			if err := http.ListenAndServe(addr, nil); err != nil {
+			if err := http.ListenAndServe(addr, mux); err != nil {
 				logger.GetLogger().Error("Metrics server error", zap.Error(err))
 			}
 		}()
+
+		// Start pprof server if port is specified
+		pprofPort, _ := cmd.Flags().GetInt(FlagPprofPort)
+		if pprofPort > 0 {
+			go func() {
+				addr := fmt.Sprintf(":%d", pprofPort)
+				logger.GetLogger().Info("Starting pprof server", zap.String("addr", addr))
+				if err := http.ListenAndServe(addr, nil); err != nil {
+					logger.GetLogger().Error("Pprof server error", zap.Error(err))
+				}
+			}()
+		}
 
 		// Start resource monitoring
 		monitorResourceUsage(time.Second)
@@ -99,6 +115,7 @@ func init() {
 
 	// Add metrics flag
 	rootCmd.PersistentFlags().Int(FlagMetricsPort, 2112, "Port to expose Prometheus metrics")
+	rootCmd.PersistentFlags().Int(FlagPprofPort, 0, "pprof port, 0 means disabled")
 }
 
 // monitorResourceUsage periodically collects and updates system resource metrics
