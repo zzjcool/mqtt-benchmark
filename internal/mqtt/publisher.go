@@ -65,17 +65,20 @@ func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, maxRetr
 			continue
 		}
 
-		p.log.Debug("Attempting to publish message",
-			zap.String("topic", p.topic),
-			zap.Int("qos", p.qos),
-			zap.Int("retry_attempt", retry+1),
-			zap.Int("max_retries", maxRetries))
-
 		start := time.Now()
 		token := client.Publish(p.topic, byte(p.qos), false, payload)
 		metrics.MQTTPublishTotal.Inc()
 
-		if token.WaitTimeout(10 * time.Second) {
+		// For QoS 0, don't wait for confirmation
+		if p.qos == 0 {
+			metrics.MQTTPublishSuccessTotal.Inc()
+			latency := time.Since(start)
+			metrics.MQTTPublishLatency.Observe(latency.Seconds())
+			return nil
+		}
+
+		// For QoS 1 and 2, wait for confirmation but with shorter timeout
+		if token.WaitTimeout(time.Second) {
 			if token.Error() != nil {
 				lastErr = token.Error()
 				p.log.Warn("Failed to publish message, retrying",
@@ -85,17 +88,13 @@ func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, maxRetr
 					zap.Int("max_retries", maxRetries),
 					zap.Duration("elapsed_time", time.Since(start)))
 				metrics.MQTTPublishFailureTotal.Inc()
-				time.Sleep(time.Second * time.Duration(retry+1)) // Exponential backoff
+				time.Sleep(time.Millisecond * 100) // Reduced backoff time
 				continue
 			}
 			// Success
 			metrics.MQTTPublishSuccessTotal.Inc()
 			latency := time.Since(start)
 			metrics.MQTTPublishLatency.Observe(latency.Seconds())
-			p.log.Debug("Successfully published message",
-				zap.String("topic", p.topic),
-				zap.Int("qos", p.qos),
-				zap.Duration("latency", latency))
 			return nil
 		} else {
 			lastErr = errors.New("publish timeout")
@@ -140,7 +139,9 @@ func (p *Publisher) RunPublish() error {
 	metrics.MQTTPublishTotal.Add(0)
 	metrics.MQTTPublishSuccessTotal.Add(0)
 	metrics.MQTTPublishFailureTotal.Add(0)
-	metrics.MQTTPublishRate.Set(float64(1000 / p.interval)) // messages per second
+	// Calculate target rate as messages per second for all clients
+	targetRate := float64(len(clients)) * (1000.0 / float64(p.interval))
+	metrics.MQTTPublishRate.Set(targetRate)
 
 	// Start a goroutine to track actual publish rate
 	publishCount := int64(0)
@@ -168,35 +169,26 @@ func (p *Publisher) RunPublish() error {
 		}
 	}()
 
-	// Create rate limiter
-	limiter := rate.NewLimiter(rate.Every(time.Duration(p.interval)*time.Millisecond), 1)
-
-	// Calculate messages per client
-	messagesPerClient := p.count / len(clients)
-	if messagesPerClient == 0 {
-		messagesPerClient = 1
-	}
-
-	p.log.Info("Starting publisher goroutines",
-		zap.Int("total_clients", len(clients)),
-		zap.Int("messages_per_client", messagesPerClient),
-		zap.Int("interval_ms", p.interval))
-
-	var wg sync.WaitGroup
-	ctx := context.Background()
-	
 	// Create error channel to track fatal errors
 	errChan := make(chan error, len(clients))
+	var wg sync.WaitGroup
+	ctx := context.Background()
 
 	for i, client := range clients {
 		wg.Add(1)
-		go func(c mqtt.Client, clientID int) {
+		// Create rate limiter for each client with burst = rate to allow catching up
+		burstSize := int(1000.0 / float64(p.interval))
+		if burstSize < 1 {
+			burstSize = 1
+		}
+		clientLimiter := rate.NewLimiter(rate.Every(time.Duration(p.interval)*time.Millisecond), burstSize)
+		go func(c mqtt.Client, clientID int, limiter *rate.Limiter) {
 			defer wg.Done()
 			p.log.Debug("Publisher goroutine started",
 				zap.Int("client_id", clientID),
-				zap.Int("message_count", messagesPerClient))
+				zap.Int("message_count", p.count/len(clients)))
 
-			for msgNum := 0; msgNum < messagesPerClient; msgNum++ {
+			for msgNum := 0; msgNum < p.count/len(clients); msgNum++ {
 				select {
 				case <-ctx.Done():
 					p.log.Debug("Publisher goroutine cancelled", zap.Int("client_id", clientID))
@@ -232,8 +224,8 @@ func (p *Publisher) RunPublish() error {
 			}
 			p.log.Debug("Publisher goroutine completed",
 				zap.Int("client_id", clientID),
-				zap.Int("messages_published", messagesPerClient))
-		}(client, i)
+				zap.Int("messages_published", p.count/len(clients)))
+		}(client, i, clientLimiter)
 	}
 
 	// Wait for all publishers to complete
