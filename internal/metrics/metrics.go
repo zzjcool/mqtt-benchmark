@@ -35,9 +35,9 @@ var (
 		Help: "The configured connection rate limit (connections per second)",
 	})
 
-	MQTTConnectionRateActual = promauto.NewGaugeVec(prometheus.GaugeOpts{
-		Name: "mqtt_benchmark_connection_rate_actual",
-		Help: "The actual connection rate achieved (connections per second)",
+	MQTTNewConnections = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "mqtt_benchmark_new_connections_total",
+		Help: "The total number of new MQTT connections established",
 	}, []string{"broker"})
 
 	// Resource metrics

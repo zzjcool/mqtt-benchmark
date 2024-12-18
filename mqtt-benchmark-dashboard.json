@@ -137,13 +137,13 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "mqtt_benchmark_connection_rate_limit",
+          "expr": "rate(mqtt_benchmark_new_connections_total[15s])",
           "instant": false,
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Connection Rate Limit",
+      "title": "Connection Rate (per second)",
       "type": "stat"
     },
     {
@@ -176,7 +176,7 @@
         "x": 16,
         "y": 0
       },
-      "id": 3,
+      "id": 4,
       "options": {
         "colorMode": "value",
         "graphMode": "area",
@@ -198,13 +198,13 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "sum(mqtt_benchmark_connection_rate_actual)",
+          "expr": "sum(mqtt_benchmark_new_connections_total)",
           "instant": false,
           "range": true,
           "refId": "A"
         }
       ],
-      "title": "Actual Connection Rate",
+      "title": "Total New Connections",
       "type": "stat"
     },
     {
@@ -268,7 +268,7 @@
         "x": 0,
         "y": 8
       },
-      "id": 4,
+      "id": 5,
       "options": {
         "legend": {
           "calcs": [
@@ -360,7 +360,7 @@
         "x": 12,
         "y": 8
       },
-      "id": 5,
+      "id": 6,
       "options": {
         "legend": {
           "calcs": [],
@@ -450,7 +450,7 @@
         "x": 0,
         "y": 16
       },
-      "id": 6,
+      "id": 7,
       "options": {
         "legend": {
           "calcs": [],
@@ -540,7 +540,7 @@
         "x": 12,
         "y": 16
       },
-      "id": 7,
+      "id": 8,
       "options": {
         "legend": {
           "calcs": [],

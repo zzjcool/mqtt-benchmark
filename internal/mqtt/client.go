@@ -37,7 +37,8 @@ func (o *Options) NewClientOptions() *mqtt.ClientOptions {
 	})
 
 	options.SetOnConnectHandler(func(client mqtt.Client) {
-		// 移除重复的计数，因为在连接成功时已经增加了计数
+		broker := options.Servers[0].String()
+		metrics.MQTTConnections.WithLabelValues(broker).Inc()
 	})
 
 	for _, server := range o.Servers {

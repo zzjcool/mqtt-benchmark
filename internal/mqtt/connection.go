@@ -53,10 +53,6 @@ func (m *ConnectionManager) RunConnections() error {
 	startTime := time.Now()
 	var successCount, failCount atomic.Int64
 
-	// 启动一个 goroutine 来实时计算和更新连接速率
-	rateTicker := time.NewTicker(time.Second)
-	defer rateTicker.Stop()
-
 	// 为每个 broker 创建连接计数器
 	brokerConnections := make(map[string]*atomic.Int64)
 	for _, server := range m.options.Servers {
@@ -158,7 +154,7 @@ func (m *ConnectionManager) RunConnections() error {
 				successCount.Add(1)
 				metrics.MQTTConnectionAttempts.WithLabelValues(broker, "success").Inc()
 				brokerConnections[broker].Add(1)
-				metrics.MQTTConnections.WithLabelValues(broker).Inc()
+				metrics.MQTTNewConnections.WithLabelValues(broker).Inc()
 
 				// 添加到活跃客户端列表
 				m.clientsMutex.Lock()
@@ -184,20 +180,6 @@ func (m *ConnectionManager) RunConnections() error {
 		}()
 	}
 
-	// 启动一个 goroutine 来实时计算和更新连接速率
-	go func() {
-		brokerLastCounts := make(map[string]int64)
-		for range rateTicker.C {
-			// 更新每个 broker 的连接速率
-			for _, server := range m.options.Servers {
-				currentCount := brokerConnections[server].Load()
-				rate := float64(currentCount - brokerLastCounts[server])
-				metrics.MQTTConnectionRateActual.WithLabelValues(server).Set(rate)
-				brokerLastCounts[server] = currentCount
-			}
-		}
-	}()
-
 	// 等待所有连接完成
 	wg.Wait()
 	close(resultCh)
@@ -216,12 +198,6 @@ func (m *ConnectionManager) RunConnections() error {
 	brokerConnectionsCount := make(map[string]int64)
 	for _, server := range m.options.Servers {
 		brokerConnectionsCount[server] = brokerConnections[server].Load()
-	}
-
-	// 为每个 broker 更新实际连接速率
-	for broker, count := range brokerConnectionsCount {
-		connectionsPerSecond := float64(count) / duration.Seconds()
-		metrics.MQTTConnectionRateActual.WithLabelValues(broker).Set(connectionsPerSecond)
 	}
 
 	// 更新连接池指标
