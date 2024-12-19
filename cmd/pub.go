@@ -5,6 +5,7 @@ package cmd
 
 import (
 	"os"
+	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/zzjcool/mqtt-benchmark/internal/logger"
@@ -20,6 +21,7 @@ const (
 	FlagCount       = "count"
 	FlagInterval    = "interval"
 	FlagRate        = "rate"
+	FlagTimeout     = "timeout"
 )
 
 // pubCmd represents the pub command
@@ -40,6 +42,7 @@ message size, QoS level, publishing rate, and number of messages.`,
 		count, _ := cmd.Flags().GetInt(FlagCount)
 		rate, _ := cmd.Flags().GetInt(FlagRate)
 		interval, _ := cmd.Flags().GetInt(FlagInterval)
+		timeout, _ := cmd.Flags().GetInt(FlagTimeout)
 
 		// Convert rate to interval if rate is specified
 		if rate > 0 {
@@ -51,6 +54,9 @@ message size, QoS level, publishing rate, and number of messages.`,
 
 		// Create publisher
 		publisher := internalmqtt.NewPublisher(options, topic, payload, payloadSize, qos, count, interval)
+		if timeout > 0 {
+			publisher.SetTimeout(time.Duration(timeout) * time.Second)
+		}
 
 		// Run publishing test
 		if err := publisher.RunPublish(); err != nil {
@@ -71,4 +77,5 @@ func init() {
 	pubCmd.Flags().Int(FlagCount, 1000, "Number of messages to publish")
 	pubCmd.Flags().Int(FlagRate, 0, "Messages per second per client (overrides interval if set)")
 	pubCmd.Flags().Int(FlagInterval, 1000, "Interval between messages in milliseconds")
+	pubCmd.Flags().Int(FlagTimeout, 5, "Timeout for publish operations in seconds")
 }
