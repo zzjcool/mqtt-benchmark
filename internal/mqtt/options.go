@@ -10,6 +10,7 @@ type Options struct {
 	ConnRate             int
 	QoS                  int
 	Retain               bool
+	ClientIndex          int
 	AutoReconnect        bool
 	CleanSession         bool
 	ConnectRetryInterval int  // Seconds between connection retries

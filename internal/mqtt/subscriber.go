@@ -18,7 +18,7 @@ import (
 // Subscriber handles MQTT message subscription operations
 type Subscriber struct {
 	options        *Options
-	topic          string
+	topicGenerator *TopicGenerator
 	qos            int
 	timeout        time.Duration
 	msgCount       int64
@@ -27,10 +27,10 @@ type Subscriber struct {
 }
 
 // NewSubscriber creates a new Subscriber
-func NewSubscriber(options *Options, topic string, qos int) *Subscriber {
+func NewSubscriber(options *Options, topic string, topicNum int, clientIndex int, qos int) *Subscriber {
 	return &Subscriber{
 		options:        options,
-		topic:          topic,
+		topicGenerator: NewTopicGenerator(topic, topicNum, clientIndex),
 		qos:            qos,
 		timeout:        5 * time.Second,
 		log:            logger.GetLogger(),
@@ -51,7 +51,7 @@ func (s *Subscriber) SetParseTimestamp(parseTimestamp bool) {
 // RunSubscribe starts the subscription process
 func (s *Subscriber) RunSubscribe() error {
 	s.log.Info("Starting subscribe test",
-		zap.String("topic", s.topic),
+		zap.String("topic", s.topicGenerator.GetTopic()),
 		zap.Int("qos", s.qos))
 
 	// Create connection manager with auto reconnect enabled
@@ -73,7 +73,7 @@ func (s *Subscriber) RunSubscribe() error {
 
 	// Initialize metrics
 	metrics.MQTTMessagesReceived.Add(0)
-	metrics.MQTTActiveSubscribers.WithLabelValues(s.topic).Add(float64(len(clients)))
+	metrics.MQTTActiveSubscribers.WithLabelValues(s.topicGenerator.GetTopic()).Add(float64(len(clients)))
 
 	// Create error channel to track fatal errors
 	errChan := make(chan error, len(clients))
@@ -85,6 +85,8 @@ func (s *Subscriber) RunSubscribe() error {
 		wg.Add(1)
 		go func(c mqtt.Client, clientID int) {
 			defer wg.Done()
+			// Create a new TopicGenerator for each client with its own clientID
+			clientTopicGen := NewTopicGenerator(s.topicGenerator.TopicTemplate, s.topicGenerator.TopicNum, clientID)
 			s.log.Debug("Subscriber goroutine started",
 				zap.Int("client_id", clientID))
 
@@ -116,10 +118,11 @@ func (s *Subscriber) RunSubscribe() error {
 			}
 
 			// Subscribe to topic
-			token := c.Subscribe(s.topic, byte(s.qos), messageHandler)
+			topic := clientTopicGen.GetTopic()
+			token := c.Subscribe(topic, byte(s.qos), messageHandler)
 			if token.WaitTimeout(s.timeout) {
 				if err := token.Error(); err != nil {
-					metrics.MQTTSubscriptionErrors.WithLabelValues(s.topic, "subscription_failed").Inc()
+					metrics.MQTTSubscriptionErrors.WithLabelValues(topic, "subscription_failed").Inc()
 					s.log.Error("Failed to subscribe",
 						zap.Int("client_id", clientID),
 						zap.Error(err))
@@ -128,10 +131,10 @@ func (s *Subscriber) RunSubscribe() error {
 				}
 				s.log.Debug("Successfully subscribed",
 					zap.Int("client_id", clientID),
-					zap.String("topic", s.topic))
+					zap.String("topic", topic))
 			} else {
 				err := fmt.Errorf("subscription timeout for client %d", clientID)
-				metrics.MQTTSubscriptionErrors.WithLabelValues(s.topic, "timeout").Inc()
+				metrics.MQTTSubscriptionErrors.WithLabelValues(topic, "timeout").Inc()
 				s.log.Error("Subscription timeout",
 					zap.Int("client_id", clientID))
 				errChan <- err
@@ -156,6 +159,6 @@ func (s *Subscriber) RunSubscribe() error {
 
 	s.log.Info("Subscribe test completed",
 		zap.Int64("total_messages_received", atomic.LoadInt64(&s.msgCount)))
-	metrics.MQTTActiveSubscribers.WithLabelValues(s.topic).Add(float64(-len(clients)))
+	metrics.MQTTActiveSubscribers.WithLabelValues(s.topicGenerator.GetTopic()).Add(float64(-len(clients)))
 	return nil
 }

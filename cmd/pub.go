@@ -13,18 +13,6 @@ import (
 	"go.uber.org/zap"
 )
 
-const (
-	FlagTopic       = "topic"
-	FlagPayload     = "payload"
-	FlagPayloadSize = "payload-size"
-	FlagQoS         = "qos"
-	FlagCount       = "count"
-	FlagInterval    = "interval"
-	FlagRate        = "rate"
-	FlagTimeout     = "timeout"
-	FlagWithTimestamp = "with-timestamp"
-)
-
 // pubCmd represents the pub command
 var pubCmd = &cobra.Command{
 	Use:   "pub",
@@ -37,6 +25,7 @@ message size, QoS level, publishing rate, and number of messages.`,
 
 		// Get publish parameters
 		topic, _ := cmd.Flags().GetString(FlagTopic)
+		topicNum, _ := cmd.Flags().GetInt(FlagTopicNum)
 		payload, _ := cmd.Flags().GetString(FlagPayload)
 		payloadSize, _ := cmd.Flags().GetInt(FlagPayloadSize)
 		qos, _ := cmd.Flags().GetInt(FlagQoS)
@@ -45,6 +34,12 @@ message size, QoS level, publishing rate, and number of messages.`,
 		interval, _ := cmd.Flags().GetInt(FlagInterval)
 		timeout, _ := cmd.Flags().GetInt(FlagTimeout)
 		withTimestamp, _ := cmd.Flags().GetBool(FlagWithTimestamp)
+
+		// Validate topic template if topic-num is set
+		if err := internalmqtt.ValidateTopicTemplate(topic, topicNum); err != nil {
+			log.Error("Invalid topic template", zap.Error(err))
+			os.Exit(1)
+		}
 
 		// Convert rate to interval if rate is specified
 		if rate > 0 {
@@ -55,7 +50,7 @@ message size, QoS level, publishing rate, and number of messages.`,
 		options := fillMqttOptions(cmd)
 
 		// Create publisher
-		publisher := internalmqtt.NewPublisher(options, topic, payload, payloadSize, qos, count, interval)
+		publisher := internalmqtt.NewPublisher(options, topic, topicNum, options.ClientIndex, payload, payloadSize, qos, count, interval)
 		if timeout > 0 {
 			publisher.SetTimeout(time.Duration(timeout) * time.Second)
 		}
@@ -74,6 +69,7 @@ func init() {
 
 	// Add pub-specific flags
 	pubCmd.Flags().String(FlagTopic, "test", "Topic to publish to")
+	pubCmd.Flags().Int(FlagTopicNum, 1, "Number of topics to publish to")
 	pubCmd.Flags().String(FlagPayload, "", "Fixed payload to publish")
 	pubCmd.Flags().Int(FlagPayloadSize, 100, "Size of random payload in bytes")
 	pubCmd.Flags().Int(FlagQoS, 0, "QoS level (0, 1, or 2)")

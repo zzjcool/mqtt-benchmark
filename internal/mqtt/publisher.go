@@ -3,7 +3,6 @@ package mqtt
 import (
 	"context"
 	"crypto/rand"
-	"fmt"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -17,31 +16,35 @@ import (
 
 // Publisher handles MQTT message publishing operations
 type Publisher struct {
-	options     *Options
-	topic       string
-	payload     string
-	payloadSize int
-	qos         int
-	count       int
-	interval    int
-	timeout     time.Duration
-	log         *zap.Logger
-	withTimestamp bool // Add timestamp to payload
+	options        *Options
+	topicGenerator *TopicGenerator
+	payload        string
+	payloadSize    int
+	qos            int
+	count          int
+	interval       int
+	timeout        time.Duration
+	log            *zap.Logger
+	withTimestamp  bool // Add timestamp to payload
+	retain         bool
 }
 
 // NewPublisher creates a new Publisher
-func NewPublisher(options *Options, topic string, payload string, payloadSize int, qos int, count int, interval int) *Publisher {
+func NewPublisher(options *Options, topic string, topicNum int, clientIndex int, payload string, payloadSize int, qos int, count int, interval int) *Publisher {
+	topicGenerator := NewTopicGenerator(topic, topicNum, clientIndex)
+
 	return &Publisher{
-		options:     options,
-		topic:       topic,
-		payload:     payload,
-		payloadSize: payloadSize,
-		qos:         qos,
-		count:       count,
-		interval:    interval,
-		timeout:     5 * time.Second,
-		log:         logger.GetLogger(),
-		withTimestamp: false,
+		options:        options,
+		topicGenerator: topicGenerator,
+		payload:        payload,
+		payloadSize:    payloadSize,
+		qos:            qos,
+		count:          count,
+		interval:       interval,
+		timeout:        5 * time.Second,
+		log:            logger.GetLogger(),
+		withTimestamp:  false,
+		retain:         false,
 	}
 }
 
@@ -53,6 +56,11 @@ func (p *Publisher) SetTimeout(timeout time.Duration) {
 // SetWithTimestamp sets whether to add timestamp to payload
 func (p *Publisher) SetWithTimestamp(withTimestamp bool) {
 	p.withTimestamp = withTimestamp
+}
+
+// SetRetain sets whether to retain the message
+func (p *Publisher) SetRetain(retain bool) {
+	p.retain = retain
 }
 
 // generateRandomPayload generates a random payload of specified size
@@ -81,41 +89,39 @@ func (p *Publisher) generateRandomPayload() []byte {
 }
 
 // publishWithRetry attempts to publish a message with retry logic
-func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, maxRetries int) error {
-	if !client.IsConnected() {
-		return fmt.Errorf("client not connected")
-	}
-
-	start := time.Now()
-	token := client.Publish(p.topic, byte(p.qos), false, payload)
+func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, topicGen *TopicGenerator, wg *sync.WaitGroup) error {
+	topic := topicGen.NextTopic()
+	token := client.Publish(topic, byte(p.qos), p.retain, payload)
 	metrics.MQTTPublishTotal.Inc()
 
 	// For QoS 0, don't wait for confirmation
 	if p.qos == 0 {
 		metrics.MQTTPublishSuccessTotal.Inc()
-		latency := time.Since(start)
+		latency := time.Since(time.Now())
 		metrics.MQTTPublishLatency.Observe(latency.Seconds())
 		return nil
 	}
 
 	// For QoS 1 and 2, handle asynchronously
+	wg.Add(1)
 	go func() {
+		defer wg.Done()
 		retryCount := 0
 		for {
 			if token.WaitTimeout(p.timeout) {
 				if token.Error() == nil {
 					metrics.MQTTPublishSuccessTotal.Inc()
-					latency := time.Since(start)
+					latency := time.Since(time.Now())
 					metrics.MQTTPublishLatency.Observe(latency.Seconds())
 					return
 				}
 
-				if retryCount >= maxRetries {
+				if retryCount >= 3 {
 					p.log.Error("Failed to publish message after retries",
 						zap.Error(token.Error()),
-						zap.String("topic", p.topic),
-						zap.Int("max_retries", maxRetries),
-						zap.Duration("elapsed_time", time.Since(start)))
+						zap.String("topic", topic),
+						zap.Int("max_retries", 3),
+						zap.Duration("elapsed_time", time.Since(time.Now())))
 					metrics.MQTTPublishFailureTotal.Inc()
 					return
 				}
@@ -123,35 +129,35 @@ func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, maxRetr
 				retryCount++
 				p.log.Warn("Failed to publish message, retrying",
 					zap.Error(token.Error()),
-					zap.String("topic", p.topic),
+					zap.String("topic", topic),
 					zap.Int("retry_attempt", retryCount),
-					zap.Int("max_retries", maxRetries))
-				
+					zap.Int("max_retries", 3))
+
 				// Try to republish
 				if client.IsConnected() {
-					token = client.Publish(p.topic, byte(p.qos), false, payload)
+					token = client.Publish(topic, byte(p.qos), p.retain, payload)
 					time.Sleep(time.Millisecond * 100) // Short backoff before retry
 					continue
 				}
 			}
 
-			if retryCount >= maxRetries {
+			if retryCount >= 3 {
 				p.log.Error("Publish timeout after retries",
-					zap.String("topic", p.topic),
-					zap.Int("max_retries", maxRetries),
-					zap.Duration("elapsed_time", time.Since(start)))
+					zap.String("topic", topic),
+					zap.Int("max_retries", 3),
+					zap.Duration("elapsed_time", time.Since(time.Now())))
 				metrics.MQTTPublishFailureTotal.Inc()
 				return
 			}
 
 			retryCount++
 			p.log.Warn("Publish timeout, retrying",
-				zap.String("topic", p.topic),
+				zap.String("topic", topic),
 				zap.Int("retry_attempt", retryCount),
-				zap.Int("max_retries", maxRetries))
-			
+				zap.Int("max_retries", 3))
+
 			if client.IsConnected() {
-				token = client.Publish(p.topic, byte(p.qos), false, payload)
+				token = client.Publish(topic, byte(p.qos), p.retain, payload)
 				continue
 			}
 		}
@@ -163,7 +169,7 @@ func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, maxRetr
 // RunPublish starts the publishing process
 func (p *Publisher) RunPublish() error {
 	p.log.Info("Starting publish test",
-		zap.String("topic", p.topic),
+		zap.String("topic", p.topicGenerator.NextTopic()),
 		zap.Int("qos", p.qos),
 		zap.Int("count", p.count),
 		zap.Int("interval", p.interval))
@@ -171,12 +177,11 @@ func (p *Publisher) RunPublish() error {
 	// Create connection manager with auto reconnect enabled
 	p.options.ConnectRetryInterval = 5 // 5 seconds retry interval
 	p.options.ConnectTimeout = 30      // 30 seconds connect timeout
-	
+
 	connManager := NewConnectionManager(p.options, 0)
 	if err := connManager.RunConnections(); err != nil {
 		return err
 	}
-	defer connManager.DisconnectAll()
 
 	// Get active clients
 	clients := connManager.activeClients
@@ -196,7 +201,7 @@ func (p *Publisher) RunPublish() error {
 	// Start a goroutine to track actual publish rate
 	publishCount := int64(0)
 	stopRateTracker := make(chan struct{})
-	
+
 	go func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
@@ -234,6 +239,8 @@ func (p *Publisher) RunPublish() error {
 		clientLimiter := rate.NewLimiter(rate.Every(time.Duration(p.interval)*time.Millisecond), burstSize)
 		go func(c mqtt.Client, clientID int, limiter *rate.Limiter) {
 			defer wg.Done()
+			// Create a new TopicGenerator for each client with its own clientID
+			clientTopicGen := NewTopicGenerator(p.topicGenerator.TopicTemplate, p.topicGenerator.TopicNum, clientID)
 			p.log.Debug("Publisher goroutine started",
 				zap.Int("client_id", clientID),
 				zap.Int("message_count", p.count/len(clients)))
@@ -255,16 +262,18 @@ func (p *Publisher) RunPublish() error {
 
 					// Generate payload
 					payload := p.generateRandomPayload()
+					topic := clientTopicGen.NextTopic()
 					p.log.Debug("Publishing message",
+						zap.String("topic", topic),
 						zap.Int("client_id", clientID),
 						zap.Int("message_number", msgNum+1),
 						zap.Int("payload_size", len(payload)))
 
 					// Publish with retry
-					if err := p.publishWithRetry(c, payload, 3); err != nil {
+					if err := p.publishWithRetry(c, payload, clientTopicGen, &wg); err != nil {
 						p.log.Error("Failed to publish message after retries",
 							zap.Error(err),
-							zap.String("topic", p.topic),
+							zap.String("topic", topic),
 							zap.Int("client_id", clientID),
 							zap.Int("message_number", msgNum+1))
 					} else {
@@ -291,5 +300,11 @@ func (p *Publisher) RunPublish() error {
 	}
 
 	p.log.Info("Publish test completed")
+
+	// Wait a short time to ensure all QoS 1/2 messages are acknowledged
+	time.Sleep(100 * time.Millisecond)
+
+	// Disconnect all clients
+	connManager.DisconnectAll()
 	return nil
 }

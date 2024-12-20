@@ -25,16 +25,23 @@ QoS level and topic filters.`,
 
 		// Get subscription parameters
 		topic, _ := cmd.Flags().GetString(FlagTopic)
+		topicNum, _ := cmd.Flags().GetInt(FlagTopicNum)
 		qos, _ := cmd.Flags().GetInt(FlagQoS)
 		timeout, _ := cmd.Flags().GetInt(FlagTimeout)
 		keepTime, _ := cmd.Flags().GetInt("keep-time")
 		parseTimestamp, _ := cmd.Flags().GetBool(FlagParseTimestamp)
 
+		// Validate topic template if topic-num is set
+		if err := internalmqtt.ValidateTopicTemplate(topic, topicNum); err != nil {
+			log.Error("Invalid topic template", zap.Error(err))
+			os.Exit(1)
+		}
+
 		// Get MQTT options
 		options := fillMqttOptions(cmd)
 
 		// Create subscriber
-		subscriber := internalmqtt.NewSubscriber(options, topic, qos)
+		subscriber := internalmqtt.NewSubscriber(options, topic, topicNum, options.ClientIndex, qos)
 		if timeout > 0 {
 			subscriber.SetTimeout(time.Duration(timeout) * time.Second)
 		}
@@ -57,15 +64,12 @@ QoS level and topic filters.`,
 	},
 }
 
-const (
-	FlagParseTimestamp = "parse-timestamp"
-)
-
 func init() {
 	rootCmd.AddCommand(subCmd)
 
 	// Add sub-specific flags
 	subCmd.Flags().String(FlagTopic, "test", "Topic to subscribe to")
+	subCmd.Flags().Int(FlagTopicNum, 1, "Number of topics to subscribe to")
 	subCmd.Flags().Int(FlagQoS, 0, "QoS level (0, 1, or 2)")
 	subCmd.Flags().Int(FlagTimeout, 5, "Timeout for subscribe operations in seconds")
 	subCmd.Flags().Int("keep-time", 0, "Time to keep connections alive after subscription (0 means no keep-alive)")

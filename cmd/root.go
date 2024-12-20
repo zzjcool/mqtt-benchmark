@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"strconv"
 
 	_ "net/http/pprof"
 
@@ -91,12 +92,8 @@ func init() {
 
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.mqtt-benchmark.yaml)")
 
-	// Cobra also supports local flags, which will only run
-	// when this action is called directly.
-	rootCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
-
 	// Add persistent flags
-	rootCmd.PersistentFlags().StringArrayP(FlagServers, "s", []string{"127.0.0.1:1883"}, "mqtt servers")
+	rootCmd.PersistentFlags().StringArrayP(FlagServers, "S", []string{"127.0.0.1:1883"}, "mqtt servers")
 	rootCmd.PersistentFlags().StringP(FlagUser, "u", "", "mqtt server username")
 	rootCmd.PersistentFlags().StringP(FlagPassword, "P", "", "mqtt server password")
 	rootCmd.PersistentFlags().Uint16P(FlagClientNum, "c", 100, "mqtt client num")
@@ -104,7 +101,7 @@ func init() {
 	rootCmd.PersistentFlags().StringP(FlagClientPrefix, "n", "mqtt-benchmark", "client ID prefix")
 	
 	// Add common MQTT connection flags
-	rootCmd.PersistentFlags().BoolP(FlagCleanSession, "C", true, "clean session")
+	rootCmd.PersistentFlags().BoolP(FlagCleanSession, "L", true, "clean session")
 	rootCmd.PersistentFlags().Int(FlagKeepAlive, 60, "keepalive interval in seconds")
 	rootCmd.PersistentFlags().Int(FlagRetryConnect, 0, "number of times to retry establishing a connection before giving up")
 	rootCmd.PersistentFlags().IntP(FlagConnRate, "R", 0, "connection rate(/s), default: 0")
@@ -154,6 +151,13 @@ func fillMqttOptions(cmd *cobra.Command) *mqtt.Options {
 		panic(err)
 	}
 	o.AutoReconnect = numRetry > 0
+
+	// Set ClientIndex from environment variable or use 0 as default
+	if indexStr := os.Getenv("MQTT_CLIENT_INDEX"); indexStr != "" {
+		if index, err := strconv.Atoi(indexStr); err == nil {
+			o.ClientIndex = index
+		}
+	}
 
 	return o
 }
