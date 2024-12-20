@@ -22,7 +22,6 @@ func init() {
 	rootCmd.PersistentFlags().StringP(FlagPayload, "p", "", "Message payload")
 	rootCmd.PersistentFlags().IntP(FlagPayloadSize, "s", 100, "Size of the message payload to generate")
 	rootCmd.PersistentFlags().IntP(FlagQoS, "q", 0, "QoS level (0, 1, or 2)")
-	rootCmd.PersistentFlags().IntP(FlagCount, "C", 1, "Number of messages to publish")
 	rootCmd.PersistentFlags().IntP(FlagInterval, "i", 0, "Interval between messages in milliseconds")
 	rootCmd.PersistentFlags().IntP(FlagRate, "r", 0, "Rate limit in messages per second")
 	rootCmd.PersistentFlags().DurationP(FlagTimeout, "", 5*time.Second, "Timeout for operations")

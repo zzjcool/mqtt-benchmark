@@ -243,10 +243,9 @@ func (p *Publisher) RunPublish() error {
 			// Create a new TopicGenerator for each client with its own clientID
 			clientTopicGen := NewTopicGenerator(p.topicGenerator.TopicTemplate, p.topicGenerator.TopicNum, clientID)
 			p.log.Debug("Publisher goroutine started",
-				zap.Int("client_id", clientID),
-				zap.Int("message_count", p.count/len(clients)))
+				zap.Int("client_id", clientID))
 
-			for msgNum := 0; msgNum < p.count/len(clients); msgNum++ {
+			for msgNum := 0; p.count == 0 || msgNum < p.count/len(clients); msgNum++ {
 				select {
 				case <-ctx.Done():
 					p.log.Debug("Publisher goroutine cancelled", zap.Int("client_id", clientID))

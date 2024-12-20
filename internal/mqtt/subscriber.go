@@ -94,9 +94,9 @@ func (s *Subscriber) RunSubscribe() error {
 			messageHandler := func(c mqtt.Client, msg mqtt.Message) {
 				atomic.AddInt64(&s.msgCount, 1)
 				metrics.MQTTMessagesReceived.Inc()
-				metrics.MQTTMessageReceiveRate.WithLabelValues(msg.Topic()).Inc()
-				metrics.MQTTMessageQosDistribution.WithLabelValues(msg.Topic(), fmt.Sprintf("%d", msg.Qos())).Inc()
-				metrics.MQTTMessagePayloadSize.WithLabelValues(msg.Topic()).Observe(float64(len(msg.Payload())))
+				metrics.MQTTMessageReceiveRate.Inc()
+				metrics.MQTTMessageQosDistribution.WithLabelValues(fmt.Sprintf("%d", msg.Qos())).Inc()
+				metrics.MQTTMessagePayloadSize.Observe(float64(len(msg.Payload())))
 
 				// Calculate latency if timestamp is in payload
 				if len(msg.Payload()) > 0 && s.parseTimestamp {
@@ -105,7 +105,7 @@ func (s *Subscriber) RunSubscribe() error {
 					if idx := bytes.IndexByte(payload, '|'); idx > 0 {
 						if ts, err := time.Parse(time.RFC3339Nano, string(payload[:idx])); err == nil {
 							latency := time.Since(ts).Seconds()
-							metrics.MQTTMessageReceiveLatency.WithLabelValues(msg.Topic()).Observe(latency)
+							metrics.MQTTMessageReceiveLatency.Observe(latency)
 						}
 					}
 				}

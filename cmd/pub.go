@@ -73,7 +73,7 @@ func init() {
 	pubCmd.Flags().String(FlagPayload, "", "Fixed payload to publish")
 	pubCmd.Flags().Int(FlagPayloadSize, 100, "Size of random payload in bytes")
 	pubCmd.Flags().Int(FlagQoS, 0, "QoS level (0, 1, or 2)")
-	pubCmd.Flags().Int(FlagCount, 1000, "Number of messages to publish")
+	pubCmd.Flags().Int(FlagCount, 0, "Number of messages to publish, default 0 (infinite)")
 	pubCmd.Flags().Int(FlagRate, 0, "Messages per second per client (overrides interval if set)")
 	pubCmd.Flags().Int(FlagInterval, 1000, "Interval between messages in milliseconds")
 	pubCmd.Flags().Int(FlagTimeout, 5, "Timeout for publish operations in seconds")
