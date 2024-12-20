@@ -297,12 +297,35 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, rate(mqtt_benchmark_message_receive_latency_seconds_bucket[15s]))",
+          "expr": "histogram_quantile(0.99, rate(mqtt_benchmark_message_receive_latency_seconds_bucket[15s]))",
+          "legendFormat": "p99",
           "range": true,
           "refId": "A"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "histogram_quantile(0.95, rate(mqtt_benchmark_message_receive_latency_seconds_bucket[15s]))",
+          "legendFormat": "p95",
+          "range": true,
+          "refId": "B"
+        },
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "editorMode": "code",
+          "expr": "rate(mqtt_benchmark_message_receive_latency_seconds_sum[15s]) / rate(mqtt_benchmark_message_receive_latency_seconds_count[15s])",
+          "legendFormat": "avg",
+          "range": true,
+          "refId": "C"
         }
       ],
-      "title": "Message Receive Latency (p95)",
+      "title": "Message Receive Latency",
       "type": "timeseries"
     },
     {
