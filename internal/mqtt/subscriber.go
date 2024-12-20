@@ -117,28 +117,30 @@ func (s *Subscriber) RunSubscribe() error {
 					zap.Int("payload_size", len(msg.Payload())))
 			}
 
-			// Subscribe to topic
-			topic := clientTopicGen.GetTopic()
-			token := c.Subscribe(topic, byte(s.qos), messageHandler)
-			if token.WaitTimeout(s.timeout) {
-				if err := token.Error(); err != nil {
-					metrics.MQTTSubscriptionErrors.WithLabelValues(topic, "subscription_failed").Inc()
-					s.log.Error("Failed to subscribe",
+			// Subscribe to all topics
+			topics := clientTopicGen.GetTopics()
+			for _, topic := range topics {
+				token := c.Subscribe(topic, byte(s.qos), messageHandler)
+				if token.WaitTimeout(s.timeout) {
+					if err := token.Error(); err != nil {
+						metrics.MQTTSubscriptionErrors.WithLabelValues(topic, "subscription_failed").Inc()
+						s.log.Error("Failed to subscribe",
+							zap.Int("client_id", clientID),
+							zap.Error(err))
+						errChan <- err
+						return
+					}
+					s.log.Debug("Successfully subscribed",
 						zap.Int("client_id", clientID),
-						zap.Error(err))
+						zap.String("topic", topic))
+				} else {
+					err := fmt.Errorf("subscription timeout for client %d", clientID)
+					metrics.MQTTSubscriptionErrors.WithLabelValues(topic, "timeout").Inc()
+					s.log.Error("Subscription timeout",
+						zap.Int("client_id", clientID))
 					errChan <- err
 					return
 				}
-				s.log.Debug("Successfully subscribed",
-					zap.Int("client_id", clientID),
-					zap.String("topic", topic))
-			} else {
-				err := fmt.Errorf("subscription timeout for client %d", clientID)
-				metrics.MQTTSubscriptionErrors.WithLabelValues(topic, "timeout").Inc()
-				s.log.Error("Subscription timeout",
-					zap.Int("client_id", clientID))
-				errChan <- err
-				return
 			}
 
 			// Keep the goroutine running to receive messages
