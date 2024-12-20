@@ -108,7 +108,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "mqtt_benchmark_active_subscribers",
+          "expr": "sum(mqtt_benchmark_active_subscribers)",
           "refId": "A"
         }
       ],
@@ -202,7 +202,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "rate(mqtt_benchmark_message_receive_rate[1m])",
+          "expr": "sum(rate(mqtt_benchmark_message_receive_rate[1m]))",
           "refId": "A"
         }
       ],
@@ -297,7 +297,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.99, rate(mqtt_benchmark_message_receive_latency_seconds_bucket[15s]))",
+          "expr": "histogram_quantile(0.99, sum(rate(mqtt_benchmark_message_receive_latency_seconds_bucket[15s])) by (le))",
           "legendFormat": "p99",
           "range": true,
           "refId": "A"
@@ -308,7 +308,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "histogram_quantile(0.95, rate(mqtt_benchmark_message_receive_latency_seconds_bucket[15s]))",
+          "expr": "histogram_quantile(0.95, sum(rate(mqtt_benchmark_message_receive_latency_seconds_bucket[15s])) by (le))",
           "legendFormat": "p95",
           "range": true,
           "refId": "B"
@@ -319,7 +319,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "rate(mqtt_benchmark_message_receive_latency_seconds_sum[15s]) / rate(mqtt_benchmark_message_receive_latency_seconds_count[15s])",
+          "expr": "sum(rate(mqtt_benchmark_message_receive_latency_seconds_sum[15s])) / sum(rate(mqtt_benchmark_message_receive_latency_seconds_count[15s]))",
           "legendFormat": "avg",
           "range": true,
           "refId": "C"
@@ -414,7 +414,7 @@
             "uid": "prometheus"
           },
           "editorMode": "code",
-          "expr": "rate(mqtt_benchmark_message_qos_total[1m])",
+          "expr": "sum(rate(mqtt_benchmark_message_qos_total[1m]))",
           "range": true,
           "refId": "A"
         }
@@ -509,7 +509,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, rate(mqtt_benchmark_message_payload_size_bytes_bucket[1m]))",
+          "expr": "histogram_quantile(0.95, sum(rate(mqtt_benchmark_message_payload_size_bytes_bucket[1m])) by (le))",
           "refId": "A"
         }
       ],
@@ -601,7 +601,7 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "mqtt_benchmark_subscription_errors_total",
+          "expr": "sum(mqtt_benchmark_subscription_errors_total)",
           "refId": "A"
         }
       ],

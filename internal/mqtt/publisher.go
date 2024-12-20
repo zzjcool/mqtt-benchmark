@@ -91,13 +91,14 @@ func (p *Publisher) generateRandomPayload() []byte {
 // publishWithRetry attempts to publish a message with retry logic
 func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, topicGen *TopicGenerator, wg *sync.WaitGroup) error {
 	topic := topicGen.NextTopic()
+	startTime := time.Now()
 	token := client.Publish(topic, byte(p.qos), p.retain, payload)
 	metrics.MQTTPublishTotal.Inc()
 
 	// For QoS 0, don't wait for confirmation
 	if p.qos == 0 {
 		metrics.MQTTPublishSuccessTotal.Inc()
-		latency := time.Since(time.Now())
+		latency := time.Since(startTime)
 		metrics.MQTTPublishLatency.Observe(latency.Seconds())
 		return nil
 	}
@@ -111,7 +112,7 @@ func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, topicGe
 			if token.WaitTimeout(p.timeout) {
 				if token.Error() == nil {
 					metrics.MQTTPublishSuccessTotal.Inc()
-					latency := time.Since(time.Now())
+					latency := time.Since(startTime)
 					metrics.MQTTPublishLatency.Observe(latency.Seconds())
 					return
 				}
@@ -121,7 +122,7 @@ func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, topicGe
 						zap.Error(token.Error()),
 						zap.String("topic", topic),
 						zap.Int("max_retries", 3),
-						zap.Duration("elapsed_time", time.Since(time.Now())))
+						zap.Duration("elapsed_time", time.Since(startTime)))
 					metrics.MQTTPublishFailureTotal.Inc()
 					return
 				}
@@ -145,7 +146,7 @@ func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, topicGe
 				p.log.Error("Publish timeout after retries",
 					zap.String("topic", topic),
 					zap.Int("max_retries", 3),
-					zap.Duration("elapsed_time", time.Since(time.Now())))
+					zap.Duration("elapsed_time", time.Since(startTime)))
 				metrics.MQTTPublishFailureTotal.Inc()
 				return
 			}

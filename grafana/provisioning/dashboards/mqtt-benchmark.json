@@ -907,7 +907,7 @@
               "uid": "prometheus"
             },
             "editorMode": "code",
-            "expr": "rate(mqtt_benchmark_new_connections_total[15s])",
+            "expr": "sum(rate(mqtt_benchmark_new_connections_total[15s]))",
             "range": true,
             "refId": "A"
           }
@@ -1024,7 +1024,7 @@
               "uid": "prometheus"
             },
             "editorMode": "code",
-            "expr": "rate(mqtt_benchmark_connection_time_seconds_sum[15s]) / rate(mqtt_benchmark_active_connections[15s])",
+            "expr": "sum(rate(mqtt_benchmark_connection_time_seconds_sum[15s]) / rate(mqtt_benchmark_active_connections[15s]))",
             "legendFormat": "Average",
             "range": true,
             "refId": "C"
@@ -1118,7 +1118,7 @@
               "type": "prometheus",
               "uid": "prometheus"
             },
-            "expr": "mqtt_benchmark_active_connections",
+            "expr": "sum(mqtt_benchmark_active_connections)",
             "refId": "A"
           }
         ],
@@ -1225,7 +1225,7 @@
               "uid": "prometheus"
             },
             "editorMode": "code",
-            "expr": "mqtt_benchmark_publish_rate",
+            "expr": "sum(mqtt_benchmark_publish_rate)",
             "legendFormat": "Target Rate",
             "range": true,
             "refId": "A"
@@ -1236,7 +1236,7 @@
               "uid": "prometheus"
             },
             "editorMode": "code",
-            "expr": "mqtt_benchmark_publish_actual_rate",
+            "expr": "sum(mqtt_benchmark_publish_actual_rate)",
             "legendFormat": "Actual Rate",
             "range": true,
             "refId": "B"
@@ -1354,7 +1354,7 @@
               "uid": "prometheus"
             },
             "editorMode": "code",
-            "expr": "rate(mqtt_benchmark_publish_latency_seconds_sum[15s]) / rate(mqtt_benchmark_publish_latency_seconds_count[15s])",
+            "expr": "sum(rate(mqtt_benchmark_publish_latency_seconds_sum[15s])) / sum(rate(mqtt_benchmark_publish_latency_seconds_count[15s]))",
             "legendFormat": "Average",
             "range": true,
             "refId": "C"
