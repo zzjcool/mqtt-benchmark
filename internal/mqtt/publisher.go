@@ -26,6 +26,7 @@ type Publisher struct {
 	interval    int
 	timeout     time.Duration
 	log         *zap.Logger
+	withTimestamp bool // Add timestamp to payload
 }
 
 // NewPublisher creates a new Publisher
@@ -40,6 +41,7 @@ func NewPublisher(options *Options, topic string, payload string, payloadSize in
 		interval:    interval,
 		timeout:     5 * time.Second,
 		log:         logger.GetLogger(),
+		withTimestamp: false,
 	}
 }
 
@@ -48,13 +50,33 @@ func (p *Publisher) SetTimeout(timeout time.Duration) {
 	p.timeout = timeout
 }
 
+// SetWithTimestamp sets whether to add timestamp to payload
+func (p *Publisher) SetWithTimestamp(withTimestamp bool) {
+	p.withTimestamp = withTimestamp
+}
+
 // generateRandomPayload generates a random payload of specified size
 func (p *Publisher) generateRandomPayload() []byte {
+	var payload []byte
 	if p.payload != "" {
-		return []byte(p.payload)
+		payload = []byte(p.payload)
+	} else {
+		payload = make([]byte, p.payloadSize)
+		rand.Read(payload)
 	}
-	payload := make([]byte, p.payloadSize)
-	rand.Read(payload)
+
+	if p.withTimestamp {
+		// Add timestamp to the beginning of payload
+		timestamp := time.Now().Format(time.RFC3339Nano)
+		timestampBytes := []byte(timestamp)
+		// Add a separator between timestamp and payload
+		finalPayload := make([]byte, 0, len(timestampBytes)+1+len(payload))
+		finalPayload = append(finalPayload, timestampBytes...)
+		finalPayload = append(finalPayload, '|') // Use | as separator
+		finalPayload = append(finalPayload, payload...)
+		return finalPayload
+	}
+
 	return payload
 }
 

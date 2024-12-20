@@ -1,6 +1,5 @@
 /*
 Copyright 2024 NAME HERE EMAIL ADDRESS
-
 */
 package cmd
 
@@ -29,6 +28,7 @@ QoS level and topic filters.`,
 		qos, _ := cmd.Flags().GetInt(FlagQoS)
 		timeout, _ := cmd.Flags().GetInt(FlagTimeout)
 		keepTime, _ := cmd.Flags().GetInt("keep-time")
+		parseTimestamp, _ := cmd.Flags().GetBool(FlagParseTimestamp)
 
 		// Get MQTT options
 		options := fillMqttOptions(cmd)
@@ -38,6 +38,7 @@ QoS level and topic filters.`,
 		if timeout > 0 {
 			subscriber.SetTimeout(time.Duration(timeout) * time.Second)
 		}
+		subscriber.SetParseTimestamp(parseTimestamp)
 
 		// Run subscription test
 		if err := subscriber.RunSubscribe(); err != nil {
@@ -56,6 +57,10 @@ QoS level and topic filters.`,
 	},
 }
 
+const (
+	FlagParseTimestamp = "parse-timestamp"
+)
+
 func init() {
 	rootCmd.AddCommand(subCmd)
 
@@ -63,5 +68,6 @@ func init() {
 	subCmd.Flags().String(FlagTopic, "test", "Topic to subscribe to")
 	subCmd.Flags().Int(FlagQoS, 0, "QoS level (0, 1, or 2)")
 	subCmd.Flags().Int(FlagTimeout, 5, "Timeout for subscribe operations in seconds")
-	subCmd.Flags().Int("keep-time", 0, "Time to keep subscriptions alive (in seconds). 0: don't keep, -1: keep forever")
+	subCmd.Flags().Int("keep-time", 0, "Time to keep connections alive after subscription (0 means no keep-alive)")
+	subCmd.Flags().Bool(FlagParseTimestamp, false, "Parse timestamp from the beginning of payload")
 }

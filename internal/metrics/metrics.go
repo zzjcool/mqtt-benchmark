@@ -104,4 +104,38 @@ var (
 		Help:    "Time taken to publish messages",
 		Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // from 1ms to ~1s
 	})
+
+	// Subscriber metrics
+	MQTTActiveSubscribers = promauto.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "mqtt_benchmark_active_subscribers",
+		Help: "The current number of active MQTT subscribers",
+	}, []string{"topic"})
+
+	MQTTSubscriptionErrors = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "mqtt_benchmark_subscription_errors_total",
+		Help: "The total number of subscription errors",
+	}, []string{"topic", "error_type"})
+
+	MQTTMessageReceiveLatency = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "mqtt_benchmark_message_receive_latency_seconds",
+		Help:    "The latency of receiving messages",
+		Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // from 1ms to ~1s
+	}, []string{"topic"})
+
+	MQTTMessageQosDistribution = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "mqtt_benchmark_message_qos_total",
+		Help: "Distribution of messages by QoS level",
+	}, []string{"topic", "qos"})
+
+	MQTTMessageReceiveRate = promauto.NewCounterVec(prometheus.CounterOpts{
+		Name: "mqtt_benchmark_message_receive_rate",
+		Help: "Rate of message reception per topic",
+	}, []string{"topic"})
+
+	MQTTMessagePayloadSize = promauto.NewHistogramVec(prometheus.HistogramOpts{
+		Name:    "mqtt_benchmark_message_payload_size_bytes",
+		Help:    "Size of received message payloads in bytes",
+		Buckets: prometheus.ExponentialBuckets(64, 2, 10), // from 64B to ~32KB
+	}, []string{"topic"})
+
 )

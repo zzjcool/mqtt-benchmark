@@ -7,6 +7,8 @@ import (
 	"sync/atomic"
 	"time"
 
+	"bytes"
+
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/zzjcool/mqtt-benchmark/internal/logger"
 	"github.com/zzjcool/mqtt-benchmark/internal/metrics"
@@ -15,28 +17,35 @@ import (
 
 // Subscriber handles MQTT message subscription operations
 type Subscriber struct {
-	options  *Options
-	topic    string
-	qos      int
-	timeout  time.Duration
-	log      *zap.Logger
-	msgCount int64
+	options        *Options
+	topic          string
+	qos            int
+	timeout        time.Duration
+	msgCount       int64
+	log            *zap.Logger
+	parseTimestamp bool // Parse timestamp from payload
 }
 
 // NewSubscriber creates a new Subscriber
 func NewSubscriber(options *Options, topic string, qos int) *Subscriber {
 	return &Subscriber{
-		options: options,
-		topic:   topic,
-		qos:     qos,
-		timeout: 5 * time.Second,
-		log:     logger.GetLogger(),
+		options:        options,
+		topic:          topic,
+		qos:            qos,
+		timeout:        5 * time.Second,
+		log:            logger.GetLogger(),
+		parseTimestamp: false,
 	}
 }
 
 // SetTimeout sets the subscription timeout duration
 func (s *Subscriber) SetTimeout(timeout time.Duration) {
 	s.timeout = timeout
+}
+
+// SetParseTimestamp sets whether to parse timestamp from payload
+func (s *Subscriber) SetParseTimestamp(parseTimestamp bool) {
+	s.parseTimestamp = parseTimestamp
 }
 
 // RunSubscribe starts the subscription process
@@ -64,6 +73,7 @@ func (s *Subscriber) RunSubscribe() error {
 
 	// Initialize metrics
 	metrics.MQTTMessagesReceived.Add(0)
+	metrics.MQTTActiveSubscribers.WithLabelValues(s.topic).Add(float64(len(clients)))
 
 	// Create error channel to track fatal errors
 	errChan := make(chan error, len(clients))
@@ -82,6 +92,22 @@ func (s *Subscriber) RunSubscribe() error {
 			messageHandler := func(c mqtt.Client, msg mqtt.Message) {
 				atomic.AddInt64(&s.msgCount, 1)
 				metrics.MQTTMessagesReceived.Inc()
+				metrics.MQTTMessageReceiveRate.WithLabelValues(msg.Topic()).Inc()
+				metrics.MQTTMessageQosDistribution.WithLabelValues(msg.Topic(), fmt.Sprintf("%d", msg.Qos())).Inc()
+				metrics.MQTTMessagePayloadSize.WithLabelValues(msg.Topic()).Observe(float64(len(msg.Payload())))
+
+				// Calculate latency if timestamp is in payload
+				if len(msg.Payload()) > 0 && s.parseTimestamp {
+					// Try to parse timestamp from the beginning of payload
+					payload := msg.Payload()
+					if idx := bytes.IndexByte(payload, '|'); idx > 0 {
+						if ts, err := time.Parse(time.RFC3339Nano, string(payload[:idx])); err == nil {
+							latency := time.Since(ts).Seconds()
+							metrics.MQTTMessageReceiveLatency.WithLabelValues(msg.Topic()).Observe(latency)
+						}
+					}
+				}
+
 				s.log.Debug("Message received",
 					zap.Int("client_id", clientID),
 					zap.String("topic", msg.Topic()),
@@ -93,6 +119,7 @@ func (s *Subscriber) RunSubscribe() error {
 			token := c.Subscribe(s.topic, byte(s.qos), messageHandler)
 			if token.WaitTimeout(s.timeout) {
 				if err := token.Error(); err != nil {
+					metrics.MQTTSubscriptionErrors.WithLabelValues(s.topic, "subscription_failed").Inc()
 					s.log.Error("Failed to subscribe",
 						zap.Int("client_id", clientID),
 						zap.Error(err))
@@ -104,6 +131,7 @@ func (s *Subscriber) RunSubscribe() error {
 					zap.String("topic", s.topic))
 			} else {
 				err := fmt.Errorf("subscription timeout for client %d", clientID)
+				metrics.MQTTSubscriptionErrors.WithLabelValues(s.topic, "timeout").Inc()
 				s.log.Error("Subscription timeout",
 					zap.Int("client_id", clientID))
 				errChan <- err
@@ -128,5 +156,6 @@ func (s *Subscriber) RunSubscribe() error {
 
 	s.log.Info("Subscribe test completed",
 		zap.Int64("total_messages_received", atomic.LoadInt64(&s.msgCount)))
+	metrics.MQTTActiveSubscribers.WithLabelValues(s.topic).Add(float64(-len(clients)))
 	return nil
 }

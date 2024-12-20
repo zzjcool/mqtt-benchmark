@@ -22,6 +22,7 @@ const (
 	FlagInterval    = "interval"
 	FlagRate        = "rate"
 	FlagTimeout     = "timeout"
+	FlagWithTimestamp = "with-timestamp"
 )
 
 // pubCmd represents the pub command
@@ -43,6 +44,7 @@ message size, QoS level, publishing rate, and number of messages.`,
 		rate, _ := cmd.Flags().GetInt(FlagRate)
 		interval, _ := cmd.Flags().GetInt(FlagInterval)
 		timeout, _ := cmd.Flags().GetInt(FlagTimeout)
+		withTimestamp, _ := cmd.Flags().GetBool(FlagWithTimestamp)
 
 		// Convert rate to interval if rate is specified
 		if rate > 0 {
@@ -57,6 +59,7 @@ message size, QoS level, publishing rate, and number of messages.`,
 		if timeout > 0 {
 			publisher.SetTimeout(time.Duration(timeout) * time.Second)
 		}
+		publisher.SetWithTimestamp(withTimestamp)
 
 		// Run publishing test
 		if err := publisher.RunPublish(); err != nil {
@@ -78,4 +81,5 @@ func init() {
 	pubCmd.Flags().Int(FlagRate, 0, "Messages per second per client (overrides interval if set)")
 	pubCmd.Flags().Int(FlagInterval, 1000, "Interval between messages in milliseconds")
 	pubCmd.Flags().Int(FlagTimeout, 5, "Timeout for publish operations in seconds")
+	pubCmd.Flags().Bool(FlagWithTimestamp, false, "Add timestamp to the beginning of payload")
 }

@@ -27,6 +27,5 @@ services:
       - GF_DASHBOARDS_DEFAULT_HOME_DASHBOARD_PATH=/etc/grafana/provisioning/dashboards/mqtt-benchmark.json
     volumes:
       - ./grafana/provisioning:/etc/grafana/provisioning
-      - ./mqtt-benchmark-dashboard.json:/etc/grafana/provisioning/dashboards/mqtt-benchmark.json
     depends_on:
       - prometheus
