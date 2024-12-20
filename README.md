@@ -1,19 +1,21 @@
 # MQTT Benchmark Tool
 
-A powerful benchmark tool for MQTT brokers that allows you to test various aspects of MQTT broker performance including connection handling, publishing, and subscribing. The tool provides detailed metrics through Prometheus integration and supports multiple connection and message patterns.
+A powerful, cross-platform, and highly performant benchmark tool for MQTT brokers written in Go. It allows you to test various aspects of MQTT broker performance including connection handling, publishing, and subscribing. The tool provides detailed metrics through Prometheus integration, supports multiple connection and message patterns, and can be easily distributed on Kubernetes.
 
-## Features
+### Features
 
 - Multiple client connections simulation
 - Configurable QoS levels
 - Message rate control
 - Connection rate limiting
 - Customizable payload sizes
-- Multiple topic support
+- Multiple topic support with topic template
 - Latency measurements
-- Prometheus metrics integration
+- Prometheus metrics integration for easy visualization
 - Detailed logging
 - pprof support for profiling
+- Docker support for easy deployment
+- Kubernetes support for distributed load testing
 
 ## Installation
 
@@ -30,7 +32,7 @@ The tool provides three main commands:
 
 ### Global Flags
 
-```
+```bash
   -S, --servers strings        MQTT broker addresses (default [127.0.0.1:1883])
   -u, --user string           MQTT username
   -P, --pass string           MQTT password
@@ -173,6 +175,82 @@ mqtt-benchmark pub -t test --pprof-port 6060
 go tool pprof http://localhost:6060/debug/pprof/heap
 go tool pprof http://localhost:6060/debug/pprof/profile
 ```
+
+## Local Monitoring Setup
+
+### Using Docker Compose
+
+To start the monitoring stack locally:
+
+```bash
+docker compose up -d
+```
+
+Access the monitoring dashboards:
+- Prometheus: http://localhost:9090
+- Grafana: http://localhost:3000 (default credentials: admin/admin)
+
+### Using Kubernetes
+
+1. Create monitoring namespace and deploy Prometheus:
+
+```bash
+kubectl create namespace monitoring
+kubectl apply -f k8s-prometheus.yaml
+```
+
+2. Deploy Grafana:
+
+```bash
+kubectl apply -f k8s-grafana.yaml
+```
+
+3. Import Grafana Dashboard:
+   - Access Grafana web interface
+   - Click on '+' icon and select 'Import'
+   - Click 'Upload JSON file'
+   - Select the dashboard JSON file from `grafana/dashboards/*-dashboard.json`
+   - Select the Prometheus data source
+   - Click 'Import'
+
+4. Access the monitoring dashboards:
+   - Get Prometheus URL:
+     ```bash
+     kubectl get svc -n monitoring prometheus-service
+     ```
+   - Get Grafana URL:
+     ```bash
+     kubectl get svc -n monitoring grafana-service
+     ```
+
+## Running Benchmark in Kubernetes
+
+1. Create benchmark deployment:
+
+```bash
+kubectl apply -f deployment.yaml
+```
+
+2. Scale the benchmark:
+
+```bash
+kubectl scale deployment mqtt-benchmark --replicas=3
+```
+
+3. View benchmark logs:
+
+```bash
+kubectl logs -l app=mqtt-benchmark -f
+```
+
+4. Monitor metrics:
+   - Open Grafana dashboard
+   - Import the MQTT Benchmark dashboard (ID: provided in grafana/dashboards)
+   - View real-time metrics including:
+     - Connection success/failure rates
+     - Message throughput
+     - Latency statistics
+     - Client counts
 
 ## License
 
