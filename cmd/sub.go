@@ -1,40 +1,67 @@
 /*
-Copyright © 2024 NAME HERE <EMAIL ADDRESS>
+Copyright 2024 NAME HERE EMAIL ADDRESS
 
 */
 package cmd
 
 import (
-	"fmt"
+	"os"
+	"time"
 
 	"github.com/spf13/cobra"
+	"github.com/zzjcool/mqtt-benchmark/internal/logger"
+	internalmqtt "github.com/zzjcool/mqtt-benchmark/internal/mqtt"
+	"go.uber.org/zap"
 )
 
 // subCmd represents the sub command
 var subCmd = &cobra.Command{
 	Use:   "sub",
-	Short: "A brief description of your command",
-	Long: `A longer description that spans multiple lines and likely contains examples
-and usage of using your command. For example:
-
-Cobra is a CLI library for Go that empowers applications.
-This application is a tool to generate the needed files
-to quickly create a Cobra application.`,
+	Short: "Subscribe to messages from MQTT broker(s)",
+	Long: `Subscribe to messages from MQTT broker(s) with specified parameters.
+This command allows you to test broker subscription performance with various parameters like
+QoS level and topic filters.`,
 	Run: func(cmd *cobra.Command, args []string) {
-		fmt.Println("sub called")
+		log := logger.GetLogger()
+
+		// Get subscription parameters
+		topic, _ := cmd.Flags().GetString(FlagTopic)
+		qos, _ := cmd.Flags().GetInt(FlagQoS)
+		timeout, _ := cmd.Flags().GetInt(FlagTimeout)
+		keepTime, _ := cmd.Flags().GetInt("keep-time")
+
+		// Get MQTT options
+		options := fillMqttOptions(cmd)
+
+		// Create subscriber
+		subscriber := internalmqtt.NewSubscriber(options, topic, qos)
+		if timeout > 0 {
+			subscriber.SetTimeout(time.Duration(timeout) * time.Second)
+		}
+
+		// Run subscription test
+		if err := subscriber.RunSubscribe(); err != nil {
+			log.Error("Failed to run subscription", zap.Error(err))
+			os.Exit(1)
+		}
+
+		// Keep connections if specified
+		if keepTime != 0 {
+			connManager := internalmqtt.NewConnectionManager(options, keepTime)
+			if err := connManager.KeepConnections(); err != nil {
+				log.Error("Failed to keep connections", zap.Error(err))
+				os.Exit(1)
+			}
+		}
 	},
 }
 
 func init() {
 	rootCmd.AddCommand(subCmd)
 
-	// Here you will define your flags and configuration settings.
-
-	// Cobra supports Persistent Flags which will work for this command
-	// and all subcommands, e.g.:
-	// subCmd.PersistentFlags().String("foo", "", "A help for foo")
-
-	// Cobra supports local flags which will only run when this command
-	// is called directly, e.g.:
-	// subCmd.Flags().BoolP("toggle", "t", false, "Help message for toggle")
+	// Add sub-specific flags
+	subCmd.Flags().String(FlagTopic, "test", "Topic to subscribe to")
+	subCmd.Flags().Int(FlagQoS, 0, "QoS level (0, 1, or 2)")
+	subCmd.Flags().Int(FlagTimeout, 5, "Timeout for subscribe operations in seconds")
+	subCmd.Flags().Int("keep-time", 0, "Time to keep subscriptions alive (in seconds). 0: don't keep, -1: keep forever")
 }

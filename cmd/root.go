@@ -29,6 +29,7 @@ const (
 	FlagConnRate       = "connrate"
 	FlagMetricsPort    = "metrics-port"
 	FlagPprofPort      = "pprof-port"
+	FlagClientPrefix   = "client-prefix"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -100,6 +101,7 @@ func init() {
 	rootCmd.PersistentFlags().StringP(FlagPassword, "P", "", "mqtt server password")
 	rootCmd.PersistentFlags().Uint16P(FlagClientNum, "c", 100, "mqtt client num")
 	rootCmd.PersistentFlags().String(FlagLogLevel, "info", "log level (debug, info, warn, error)")
+	rootCmd.PersistentFlags().StringP(FlagClientPrefix, "n", "mqtt-benchmark", "client ID prefix")
 	
 	// Add common MQTT connection flags
 	rootCmd.PersistentFlags().BoolP(FlagCleanSession, "C", true, "clean session")
@@ -128,6 +130,10 @@ func fillMqttOptions(cmd *cobra.Command) *mqtt.Options {
 	}
 
 	if o.ClientNum, err = cmd.Flags().GetUint16(FlagClientNum); err != nil {
+		panic(err)
+	}
+
+	if o.ClientPrefix, err = cmd.Flags().GetString(FlagClientPrefix); err != nil {
 		panic(err)
 	}
 
