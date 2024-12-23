@@ -3,6 +3,7 @@ package mqtt
 import (
 	"context"
 	"crypto/rand"
+	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -221,6 +222,9 @@ func (p *Publisher) RunPublish() error {
 				metrics.MQTTPublishActualRate.Set(rate)
 				lastCount = currentCount
 				lastTime = currentTime
+
+				p.log.Info("Publishing at rate",
+					zap.Uint64("rate", uint64(math.Round(rate))))
 			}
 		}
 	}()
