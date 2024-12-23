@@ -3,6 +3,9 @@ package metrics
 import (
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/prometheus/client_golang/prometheus/promauto"
+	dto "github.com/prometheus/client_model/go"
+	"github.com/zzjcool/mqtt-benchmark/internal/logger"
+	"go.uber.org/zap"
 )
 
 var (
@@ -139,3 +142,22 @@ var (
 	})
 
 )
+
+func GetCounterValue(metric *prometheus.CounterVec, labelValues ...string) float64 {
+	var m = &dto.Metric{}
+	if err := metric.WithLabelValues(labelValues...).Write(m); err != nil {
+		logger.GetLogger().Error("failed to get counter value", zap.Error(err))
+		return 0
+	}
+	return m.Counter.GetValue()
+}
+
+func GetGaugeValue(metric *prometheus.GaugeVec, labelValues ...string) float64 {
+	var m = &dto.Metric{}
+	if err := metric.WithLabelValues(labelValues...).Write(m); err != nil {
+		logger.GetLogger().Error("failed to get gauge value", zap.Error(err))
+		return 0
+	}
+	return m.Gauge.GetValue()
+}
+

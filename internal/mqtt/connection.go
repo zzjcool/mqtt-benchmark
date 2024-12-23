@@ -11,6 +11,8 @@ import (
 	"syscall"
 	"time"
 
+	"sync/atomic"
+
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/zzjcool/mqtt-benchmark/internal/logger"
 	"github.com/zzjcool/mqtt-benchmark/internal/metrics"
@@ -61,7 +63,33 @@ func (m *ConnectionManager) RunConnections() error {
 	clientChan := make(chan mqtt.Client, m.options.ClientNum)
 	errorChan := make(chan error, m.options.ClientNum)
 
-	for i := uint16(0); i < m.options.ClientNum; i++ {
+	// Add progress tracking
+	var failedCount uint32
+	progressDone := make(chan struct{})
+
+	// Start progress reporting goroutine
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+
+		for {
+			select {
+			case <-ticker.C:
+				connectedCount := uint32(metrics.GetGaugeValue(metrics.MQTTConnections, m.options.Servers...))
+				remaining := m.options.ClientNum - (connectedCount + failedCount)
+
+				m.log.Info("Connection progress",
+					zap.Uint32("connected", connectedCount),
+					zap.Uint32("failed", failedCount),
+					zap.Uint32("remaining", remaining))
+			case <-progressDone:
+				m.log.Info("Connection progress done")
+				return
+			}
+		}
+	}()
+
+	for i := uint32(0); i < m.options.ClientNum; i++ {
 		// Wait for rate limiter
 		if err := limiter.Wait(context.Background()); err != nil {
 			m.log.Error("Rate limiter error", zap.Error(err))
@@ -69,12 +97,12 @@ func (m *ConnectionManager) RunConnections() error {
 		}
 
 		wg.Add(1)
-		go func(index uint16) {
+		go func(index uint32) {
 			defer wg.Done()
 
 			// Create unique client ID
 			clientID := fmt.Sprintf("%s-%d", m.options.ClientPrefix, index)
-			serverIndex := index % uint16(len(m.options.Servers))
+			serverIndex := index % uint32(len(m.options.Servers))
 			serverAddr := m.options.Servers[serverIndex]
 
 			// Configure MQTT client options
@@ -141,6 +169,7 @@ func (m *ConnectionManager) RunConnections() error {
 						zap.Error(token.Error()))
 					metrics.MQTTConnectionAttempts.WithLabelValues(serverAddr, "failure").Inc()
 					errorChan <- token.Error()
+					atomic.AddUint32(&failedCount, 1)
 					return
 				}
 				metrics.MQTTConnectionTime.WithLabelValues(serverAddr).Observe(time.Since(startTime).Seconds())
@@ -150,6 +179,7 @@ func (m *ConnectionManager) RunConnections() error {
 					zap.String("client_id", clientID))
 				metrics.MQTTConnectionAttempts.WithLabelValues(serverAddr, "failure").Inc()
 				errorChan <- fmt.Errorf("connection timeout for client %s", clientID)
+				atomic.AddUint32(&failedCount, 1)
 				return
 			}
 		}(i)
@@ -159,6 +189,7 @@ func (m *ConnectionManager) RunConnections() error {
 	wg.Wait()
 	close(clientChan)
 	close(errorChan)
+	close(progressDone)
 
 	// Collect successful connections
 	for client := range clientChan {

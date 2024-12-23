@@ -12,8 +12,6 @@ import (
 	"go.uber.org/zap"
 )
 
-var metricsPort int
-
 // connCmd represents the conn command
 var connCmd = &cobra.Command{
 	Use:   "conn",

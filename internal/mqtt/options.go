@@ -5,7 +5,7 @@ type Options struct {
 	User                 string
 	Password             string
 	KeepAliveSeconds     int
-	ClientNum            uint16
+	ClientNum            uint32
 	ClientPrefix         string
 	ConnRate             int
 	QoS                  int

@@ -96,7 +96,7 @@ func init() {
 	rootCmd.PersistentFlags().StringArrayP(FlagServers, "S", []string{"127.0.0.1:1883"}, "mqtt servers")
 	rootCmd.PersistentFlags().StringP(FlagUser, "u", "", "mqtt server username")
 	rootCmd.PersistentFlags().StringP(FlagPassword, "P", "", "mqtt server password")
-	rootCmd.PersistentFlags().Uint16P(FlagClientNum, "c", 100, "mqtt client num")
+	rootCmd.PersistentFlags().Uint32P(FlagClientNum, "c", 100, "mqtt client num")
 	rootCmd.PersistentFlags().String(FlagLogLevel, "info", "log level (debug, info, warn, error)")
 	rootCmd.PersistentFlags().StringP(FlagClientPrefix, "n", "mqtt-benchmark", "client ID prefix")
 	
@@ -126,7 +126,7 @@ func fillMqttOptions(cmd *cobra.Command) *mqtt.Options {
 		panic(err)
 	}
 
-	if o.ClientNum, err = cmd.Flags().GetUint16(FlagClientNum); err != nil {
+	if o.ClientNum, err = cmd.Flags().GetUint32(FlagClientNum); err != nil {
 		panic(err)
 	}
 
