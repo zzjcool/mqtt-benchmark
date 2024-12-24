@@ -75,7 +75,7 @@ func (m *ConnectionManager) RunConnections() error {
 		for {
 			select {
 			case <-ticker.C:
-				connectedCount := uint32(metrics.GetGaugeValue(metrics.MQTTConnections, m.options.Servers...))
+				connectedCount := uint32(metrics.GetGaugeVecValue(metrics.MQTTConnections, m.options.Servers...))
 				remaining := m.options.ClientNum - (connectedCount + failedCount)
 
 				m.log.Info("Connection progress",

@@ -59,12 +59,6 @@ var (
 		Help: "The number of goroutines waiting for a connection",
 	})
 
-	// Message metrics
-	MQTTMessagesSent = promauto.NewCounter(prometheus.CounterOpts{
-		Name: "mqtt_benchmark_messages_sent_total",
-		Help: "The total number of MQTT messages sent",
-	})
-
 	MQTTMessagesReceived = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "mqtt_benchmark_messages_received_total",
 		Help: "The total number of MQTT messages received",
@@ -143,7 +137,7 @@ var (
 
 )
 
-func GetCounterValue(metric *prometheus.CounterVec, labelValues ...string) float64 {
+func GetCounterVecValue(metric *prometheus.CounterVec, labelValues ...string) float64 {
 	var m = &dto.Metric{}
 	if err := metric.WithLabelValues(labelValues...).Write(m); err != nil {
 		logger.GetLogger().Error("failed to get counter value", zap.Error(err))
@@ -152,7 +146,16 @@ func GetCounterValue(metric *prometheus.CounterVec, labelValues ...string) float
 	return m.Counter.GetValue()
 }
 
-func GetGaugeValue(metric *prometheus.GaugeVec, labelValues ...string) float64 {
+func GetCounterValue(metric prometheus.Counter) float64 {
+	var m = &dto.Metric{}
+	if err := metric.Write(m); err != nil {
+		logger.GetLogger().Error("failed to get counter value", zap.Error(err))
+		return 0
+	}
+	return m.Counter.GetValue()
+}
+
+func GetGaugeVecValue(metric *prometheus.GaugeVec, labelValues ...string) float64 {
 	var m = &dto.Metric{}
 	if err := metric.WithLabelValues(labelValues...).Write(m); err != nil {
 		logger.GetLogger().Error("failed to get gauge value", zap.Error(err))

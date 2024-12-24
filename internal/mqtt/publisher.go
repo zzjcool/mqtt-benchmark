@@ -3,7 +3,6 @@ package mqtt
 import (
 	"context"
 	"crypto/rand"
-	"math"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -129,14 +128,14 @@ func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, topicGe
 						metrics.MQTTPublishLatency.Observe(latency.Seconds())
 						return
 					}
-
+					metrics.MQTTPublishFailureTotal.Inc()
 					if retryCount >= 3 {
 						p.log.Error("Failed to publish message after retries",
 							zap.Error(token.Error()),
 							zap.String("topic", topic),
 							zap.Int("max_retries", 3),
 							zap.Duration("elapsed_time", time.Since(startTime)))
-						metrics.MQTTPublishFailureTotal.Inc()
+
 						return
 					}
 
@@ -156,12 +155,12 @@ func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, topicGe
 					if !client.IsConnected() {
 						p.log.Warn("Client disconnected, stopping retries",
 							zap.String("topic", topic))
-						metrics.MQTTPublishFailureTotal.Inc()
 						return
 					}
 
 					// 重新发布消息
 					token = client.Publish(topic, byte(p.qos), p.retain, payload)
+					metrics.MQTTPublishTotal.Inc()
 				} else {
 					// 发布超时
 					if retryCount >= 3 {
@@ -169,7 +168,6 @@ func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, topicGe
 							zap.String("topic", topic),
 							zap.Int("max_retries", 3),
 							zap.Duration("elapsed_time", time.Since(startTime)))
-						metrics.MQTTPublishFailureTotal.Inc()
 						return
 					}
 
@@ -179,18 +177,18 @@ func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, topicGe
 						zap.String("topic", topic),
 						zap.Int("retry_attempt", retryCount),
 						zap.Int("max_retries", 3),
-						zap.Duration("backoff", backoff))
+						zap.Duration("backoff", backoff),
+						zap.Int64("timeout_seconds", int64(p.timeout/time.Second)))
 
 					time.Sleep(backoff)
-					
+
 					if !client.IsConnected() {
 						p.log.Warn("Client disconnected, stopping retries",
 							zap.String("topic", topic))
-						metrics.MQTTPublishFailureTotal.Inc()
 						return
 					}
-
 					token = client.Publish(topic, byte(p.qos), p.retain, payload)
+					metrics.MQTTPublishTotal.Inc()
 				}
 			}
 		}
@@ -205,11 +203,12 @@ func (p *Publisher) RunPublish() error {
 		zap.String("topic", p.topicGenerator.NextTopic()),
 		zap.Int("qos", p.qos),
 		zap.Int("count", p.count),
-		zap.Int("interval", p.interval))
+		zap.Int("interval", p.interval),
+		zap.Int64("timeout_seconds", int64(p.timeout/time.Second)))
 
 	// Create connection manager with auto reconnect enabled
 	p.options.ConnectRetryInterval = 5 // 5 seconds retry interval
-	p.options.ConnectTimeout = 30      // 30 seconds connect timeout
+	p.options.ConnectTimeout = 5       // 5 seconds connect timeout
 
 	connManager := NewConnectionManager(p.options, 0)
 	if err := connManager.RunConnections(); err != nil {
@@ -240,7 +239,7 @@ func (p *Publisher) RunPublish() error {
 		defer ticker.Stop()
 		lastCount := atomic.LoadInt64(&publishCount)
 		lastTime := time.Now()
-
+		prePublishSuccessTotal := uint64(0)
 		for {
 			select {
 			case <-stopRateTracker:
@@ -251,11 +250,15 @@ func (p *Publisher) RunPublish() error {
 				duration := currentTime.Sub(lastTime).Seconds()
 				rate := float64(currentCount-lastCount) / duration
 				metrics.MQTTPublishActualRate.Set(rate)
-				lastCount = currentCount
-				lastTime = currentTime
 
+				connectedCount := uint32(metrics.GetGaugeVecValue(metrics.MQTTConnections, p.options.Servers...))
+
+				publishSuccessTotal := uint64(metrics.GetCounterValue(metrics.MQTTPublishSuccessTotal))
 				p.log.Info("Publishing at rate",
-					zap.Uint64("rate", uint64(math.Round(rate))))
+					zap.Uint64("rate", publishSuccessTotal-prePublishSuccessTotal),
+					zap.Uint64("publish_success_total", publishSuccessTotal),
+					zap.Uint32("connected", connectedCount))
+				prePublishSuccessTotal = publishSuccessTotal
 			}
 		}
 	}()
