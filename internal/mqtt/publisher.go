@@ -109,58 +109,89 @@ func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, topicGe
 	go func() {
 		defer wg.Done()
 		retryCount := 0
-		for {
-			if token.WaitTimeout(p.timeout) {
-				if token.Error() == nil {
-					metrics.MQTTPublishSuccessTotal.Inc()
-					latency := time.Since(startTime)
-					metrics.MQTTPublishLatency.Observe(latency.Seconds())
-					return
-				}
+		ctx, cancel := context.WithTimeout(context.Background(), p.timeout*4) // 总超时时间为单次超时的4倍
+		defer cancel()
 
-				if retryCount >= 3 {
-					p.log.Error("Failed to publish message after retries",
-						zap.Error(token.Error()),
-						zap.String("topic", topic),
-						zap.Int("max_retries", 3),
-						zap.Duration("elapsed_time", time.Since(startTime)))
-					metrics.MQTTPublishFailureTotal.Inc()
-					return
-				}
-
-				retryCount++
-				p.log.Warn("Failed to publish message, retrying",
-					zap.Error(token.Error()),
-					zap.String("topic", topic),
-					zap.Int("retry_attempt", retryCount),
-					zap.Int("max_retries", 3))
-
-				// Try to republish
-				if client.IsConnected() {
-					token = client.Publish(topic, byte(p.qos), p.retain, payload)
-					time.Sleep(time.Millisecond * 100) // Short backoff before retry
-					continue
-				}
-			}
-
-			if retryCount >= 3 {
-				p.log.Error("Publish timeout after retries",
+		for retryCount <= 3 {
+			select {
+			case <-ctx.Done():
+				p.log.Error("Publish operation timed out",
 					zap.String("topic", topic),
 					zap.Int("max_retries", 3),
 					zap.Duration("elapsed_time", time.Since(startTime)))
 				metrics.MQTTPublishFailureTotal.Inc()
 				return
-			}
+			default:
+				if token.WaitTimeout(p.timeout) {
+					if token.Error() == nil {
+						metrics.MQTTPublishSuccessTotal.Inc()
+						latency := time.Since(startTime)
+						metrics.MQTTPublishLatency.Observe(latency.Seconds())
+						return
+					}
 
-			retryCount++
-			p.log.Warn("Publish timeout, retrying",
-				zap.String("topic", topic),
-				zap.Int("retry_attempt", retryCount),
-				zap.Int("max_retries", 3))
+					if retryCount >= 3 {
+						p.log.Error("Failed to publish message after retries",
+							zap.Error(token.Error()),
+							zap.String("topic", topic),
+							zap.Int("max_retries", 3),
+							zap.Duration("elapsed_time", time.Since(startTime)))
+						metrics.MQTTPublishFailureTotal.Inc()
+						return
+					}
 
-			if client.IsConnected() {
-				token = client.Publish(topic, byte(p.qos), p.retain, payload)
-				continue
+					retryCount++
+					backoff := time.Duration(retryCount*retryCount) * 100 * time.Millisecond // 指数退避
+					p.log.Warn("Failed to publish message, retrying",
+						zap.Error(token.Error()),
+						zap.String("topic", topic),
+						zap.Int("retry_attempt", retryCount),
+						zap.Int("max_retries", 3),
+						zap.Duration("backoff", backoff))
+
+					// 在重试前等待一段时间
+					time.Sleep(backoff)
+
+					// 检查客户端连接状态
+					if !client.IsConnected() {
+						p.log.Warn("Client disconnected, stopping retries",
+							zap.String("topic", topic))
+						metrics.MQTTPublishFailureTotal.Inc()
+						return
+					}
+
+					// 重新发布消息
+					token = client.Publish(topic, byte(p.qos), p.retain, payload)
+				} else {
+					// 发布超时
+					if retryCount >= 3 {
+						p.log.Error("Publish timeout after retries",
+							zap.String("topic", topic),
+							zap.Int("max_retries", 3),
+							zap.Duration("elapsed_time", time.Since(startTime)))
+						metrics.MQTTPublishFailureTotal.Inc()
+						return
+					}
+
+					retryCount++
+					backoff := time.Duration(retryCount*retryCount) * 100 * time.Millisecond
+					p.log.Warn("Publish timeout, retrying",
+						zap.String("topic", topic),
+						zap.Int("retry_attempt", retryCount),
+						zap.Int("max_retries", 3),
+						zap.Duration("backoff", backoff))
+
+					time.Sleep(backoff)
+					
+					if !client.IsConnected() {
+						p.log.Warn("Client disconnected, stopping retries",
+							zap.String("topic", topic))
+						metrics.MQTTPublishFailureTotal.Inc()
+						return
+					}
+
+					token = client.Publish(topic, byte(p.qos), p.retain, payload)
+				}
 			}
 		}
 	}()
