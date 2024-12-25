@@ -96,6 +96,7 @@ func (s *Subscriber) RunSubscribe() error {
 				defer ticker.Stop()
 				preMessagesReceived := uint64(metrics.GetCounterValue(metrics.MQTTMessagesReceived))
 				preMessagesPayloadSize := uint64(metrics.GetHistogramValue(metrics.MQTTMessagePayloadSize))
+				preMessagesLatency := metrics.GetHistogramValue(metrics.MQTTMessageReceiveLatency)
 				for {
 					select {
 					case <-ctx.Done():
@@ -103,20 +104,26 @@ func (s *Subscriber) RunSubscribe() error {
 					case <-ticker.C:
 						messagesReceived := uint64(metrics.GetCounterValue(metrics.MQTTMessagesReceived))
 						messagesPayloadSize := uint64(metrics.GetHistogramValue(metrics.MQTTMessagePayloadSize))
+						messagesLatency := metrics.GetHistogramValue(metrics.MQTTMessageReceiveLatency)
 
 						rate := messagesReceived - preMessagesReceived
 						averagePayload := uint64(0)
+						avgLatency := float64(0)
 						if rate != 0 {
 							averagePayload = (messagesPayloadSize - preMessagesPayloadSize) / rate
+							avgLatency = (messagesLatency - preMessagesLatency) / float64(rate) * 1000
 						}
 						s.log.Info("Received messages",
 							zap.Uint64("rate", rate),
 							zap.Uint64("count", messagesReceived),
 							zap.Uint64("received_total", messagesReceived),
-							zap.Uint64("average_payload", averagePayload))
+							zap.Uint64("average_payload", averagePayload),
+							zap.Float64("average_latency_ms", avgLatency),
+						)
 
 						preMessagesReceived = messagesReceived
 						preMessagesPayloadSize = messagesPayloadSize
+						preMessagesLatency = messagesLatency
 					}
 				}
 			}()
@@ -129,14 +136,22 @@ func (s *Subscriber) RunSubscribe() error {
 				metrics.MQTTMessageQosDistribution.WithLabelValues(fmt.Sprintf("%d", msg.Qos())).Inc()
 				metrics.MQTTMessagePayloadSize.Observe(float64(len(msg.Payload())))
 
+				latency := float64(0)
 				// Calculate latency if timestamp is in payload
 				if len(msg.Payload()) > 0 && s.parseTimestamp {
 					// Try to parse timestamp from the beginning of payload
 					payload := msg.Payload()
 					if idx := bytes.IndexByte(payload, '|'); idx > 0 {
 						if ts, err := time.Parse(time.RFC3339Nano, string(payload[:idx])); err == nil {
-							latency := time.Since(ts).Seconds()
+							latency = time.Since(ts).Seconds()
 							metrics.MQTTMessageReceiveLatency.Observe(latency)
+						}else {
+							s.log.Error("Failed to parse timestamp",
+								zap.Int("client_id", clientID),
+								zap.String("topic", msg.Topic()),
+								zap.Int("qos", int(msg.Qos())),
+								zap.Int("payload_size", len(msg.Payload())),
+								zap.Error(err))
 						}
 					}
 				}
@@ -145,7 +160,9 @@ func (s *Subscriber) RunSubscribe() error {
 					zap.Int("client_id", clientID),
 					zap.String("topic", msg.Topic()),
 					zap.Int("qos", int(msg.Qos())),
-					zap.Int("payload_size", len(msg.Payload())))
+					zap.Int("payload_size", len(msg.Payload())),
+					zap.Float64("latency_ms", latency*1000),
+				)
 			}
 
 			// Subscribe to all topics

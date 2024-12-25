@@ -5,7 +5,7 @@ global:
 scrape_configs:
   - job_name: 'mqtt-benchmark'
     static_configs:
-      - targets: ['host.docker.internal:2112']  # 使用 host.docker.internal 访问宿主机
+      - targets: ['host.docker.internal:2112','host.docker.internal:2113']  # 使用 host.docker.internal 访问宿主机
   - job_name: 'kubernetes-pods'
     kubernetes_sd_configs:
       - role: pod

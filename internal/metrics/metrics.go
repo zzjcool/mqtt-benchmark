@@ -116,7 +116,7 @@ var (
 	MQTTMessageReceiveLatency = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "mqtt_benchmark_message_receive_latency_seconds",
 		Help:    "The latency of receiving messages",
-		Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // from 1ms to ~1s
+		Buckets: prometheus.ExponentialBuckets(0.001, 1.5, 30),
 	})
 
 	MQTTMessageQosDistribution = promauto.NewCounterVec(prometheus.CounterOpts{
