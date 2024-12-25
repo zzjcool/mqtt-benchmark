@@ -107,91 +107,21 @@ func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, topicGe
 	wg.Add(1)
 	go func() {
 		defer wg.Done()
-		retryCount := 0
-		ctx, cancel := context.WithTimeout(context.Background(), p.timeout*4) // 总超时时间为单次超时的4倍
-		defer cancel()
-
-		for retryCount <= 3 {
-			select {
-			case <-ctx.Done():
-				p.log.Error("Publish operation timed out",
-					zap.String("topic", topic),
-					zap.Int("max_retries", 3),
-					zap.Duration("elapsed_time", time.Since(startTime)))
-				metrics.MQTTPublishFailureTotal.Inc()
+		if token.WaitTimeout(p.timeout) {
+			if token.Error() == nil {
+				metrics.MQTTPublishSuccessTotal.Inc()
+				latency := time.Since(startTime)
+				metrics.MQTTPublishLatency.Observe(latency.Seconds())
 				return
-			default:
-				if token.WaitTimeout(p.timeout) {
-					if token.Error() == nil {
-						metrics.MQTTPublishSuccessTotal.Inc()
-						latency := time.Since(startTime)
-						metrics.MQTTPublishLatency.Observe(latency.Seconds())
-						return
-					}
-					metrics.MQTTPublishFailureTotal.Inc()
-					if retryCount >= 3 {
-						p.log.Error("Failed to publish message after retries",
-							zap.Error(token.Error()),
-							zap.String("topic", topic),
-							zap.Int("max_retries", 3),
-							zap.Duration("elapsed_time", time.Since(startTime)))
-
-						return
-					}
-
-					retryCount++
-					backoff := time.Duration(retryCount*retryCount) * 100 * time.Millisecond // 指数退避
-					p.log.Warn("Failed to publish message, retrying",
-						zap.Error(token.Error()),
-						zap.String("topic", topic),
-						zap.Int("retry_attempt", retryCount),
-						zap.Int("max_retries", 3),
-						zap.Duration("backoff", backoff))
-
-					// 在重试前等待一段时间
-					time.Sleep(backoff)
-
-					// 检查客户端连接状态
-					if !client.IsConnected() {
-						p.log.Warn("Client disconnected, stopping retries",
-							zap.String("topic", topic))
-						return
-					}
-
-					// 重新发布消息
-					token = client.Publish(topic, byte(p.qos), p.retain, payload)
-					metrics.MQTTPublishTotal.Inc()
-				} else {
-					// 发布超时
-					if retryCount >= 3 {
-						p.log.Error("Publish timeout after retries",
-							zap.String("topic", topic),
-							zap.Int("max_retries", 3),
-							zap.Duration("elapsed_time", time.Since(startTime)))
-						return
-					}
-
-					retryCount++
-					backoff := time.Duration(retryCount*retryCount) * 100 * time.Millisecond
-					p.log.Warn("Publish timeout, retrying",
-						zap.String("topic", topic),
-						zap.Int("retry_attempt", retryCount),
-						zap.Int("max_retries", 3),
-						zap.Duration("backoff", backoff),
-						zap.Int64("timeout_seconds", int64(p.timeout/time.Second)))
-
-					time.Sleep(backoff)
-
-					if !client.IsConnected() {
-						p.log.Warn("Client disconnected, stopping retries",
-							zap.String("topic", topic))
-						return
-					}
-					token = client.Publish(topic, byte(p.qos), p.retain, payload)
-					metrics.MQTTPublishTotal.Inc()
-				}
 			}
+
+		} else {
+			p.log.Warn("Publish operation timed out",
+				zap.String("topic", topic),
+				zap.Duration("elapsed_time", time.Since(startTime)))
 		}
+		metrics.MQTTPublishFailureTotal.Inc()
+
 	}()
 
 	return nil
