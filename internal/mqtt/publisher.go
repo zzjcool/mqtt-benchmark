@@ -65,26 +65,39 @@ func (p *Publisher) SetRetain(retain bool) {
 
 // generateRandomPayload generates a random payload of specified size
 func (p *Publisher) generateRandomPayload() []byte {
-	var payload []byte
-	if p.payload != "" {
-		payload = []byte(p.payload)
-	} else {
-		payload = make([]byte, p.payloadSize)
-		rand.Read(payload)
-	}
-
 	if p.withTimestamp {
-		// Add timestamp to the beginning of payload
+		// Calculate timestamp size including separator
 		timestamp := time.Now().Format(time.RFC3339Nano)
-		timestampBytes := []byte(timestamp)
-		// Add a separator between timestamp and payload
-		finalPayload := make([]byte, 0, len(timestampBytes)+1+len(payload))
-		finalPayload = append(finalPayload, timestampBytes...)
-		finalPayload = append(finalPayload, '|') // Use | as separator
+		timestampSize := len(timestamp) + 1 // +1 for separator
+
+		var payload []byte
+		if p.payload != "" {
+			payload = []byte(p.payload)
+		} else {
+			// Adjust payload size to account for timestamp
+			adjustedSize := p.payloadSize - timestampSize
+			if adjustedSize <= 0 {
+				// If timestamp is larger than desired size, just return timestamp
+				return append([]byte(timestamp), '|')
+			}
+			payload = make([]byte, adjustedSize)
+			rand.Read(payload)
+		}
+
+		// Combine timestamp and payload
+		finalPayload := make([]byte, 0, timestampSize+len(payload))
+		finalPayload = append(finalPayload, []byte(timestamp)...)
+		finalPayload = append(finalPayload, '|')
 		finalPayload = append(finalPayload, payload...)
 		return finalPayload
 	}
 
+	// No timestamp case
+	if p.payload != "" {
+		return []byte(p.payload)
+	}
+	payload := make([]byte, p.payloadSize)
+	rand.Read(payload)
 	return payload
 }
 
