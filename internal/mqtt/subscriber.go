@@ -90,6 +90,37 @@ func (s *Subscriber) RunSubscribe() error {
 			s.log.Debug("Subscriber goroutine started",
 				zap.Int("client_id", clientID))
 
+			// Start a goroutine to log message count every second
+			go func() {
+				ticker := time.NewTicker(time.Second)
+				defer ticker.Stop()
+				preMessagesReceived := uint64(metrics.GetCounterValue(metrics.MQTTMessagesReceived))
+				preMessagesPayloadSize := uint64(metrics.GetHistogramValue(metrics.MQTTMessagePayloadSize))
+				for {
+					select {
+					case <-ctx.Done():
+						return
+					case <-ticker.C:
+						messagesReceived := uint64(metrics.GetCounterValue(metrics.MQTTMessagesReceived))
+						messagesPayloadSize := uint64(metrics.GetHistogramValue(metrics.MQTTMessagePayloadSize))
+
+						rate := messagesReceived - preMessagesReceived
+						averagePayload := uint64(0)
+						if rate != 0 {
+							averagePayload = (messagesPayloadSize - preMessagesPayloadSize) / rate
+						}
+						s.log.Info("Received messages",
+							zap.Uint64("rate", rate),
+							zap.Uint64("count", messagesReceived),
+							zap.Uint64("received_total", messagesReceived),
+							zap.Uint64("average_payload", averagePayload))
+
+						preMessagesReceived = messagesReceived
+						preMessagesPayloadSize = messagesPayloadSize
+					}
+				}
+			}()
+
 			// Create message handler
 			messageHandler := func(c mqtt.Client, msg mqtt.Message) {
 				atomic.AddInt64(&s.msgCount, 1)

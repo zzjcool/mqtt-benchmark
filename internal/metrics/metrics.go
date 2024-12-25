@@ -155,6 +155,15 @@ func GetCounterValue(metric prometheus.Counter) float64 {
 	return m.Counter.GetValue()
 }
 
+func GetHistogramValue(metric prometheus.Histogram) float64 {
+	var m = &dto.Metric{}
+	if err := metric.Write(m); err != nil {
+		logger.GetLogger().Error("failed to get counter value", zap.Error(err))
+		return 0
+	}
+	return *m.Histogram.SampleSum
+}
+
 func GetGaugeVecValue(metric *prometheus.GaugeVec, labelValues ...string) float64 {
 	var m = &dto.Metric{}
 	if err := metric.WithLabelValues(labelValues...).Write(m); err != nil {
