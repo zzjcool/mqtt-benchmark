@@ -26,11 +26,11 @@ var (
 	}, []string{"broker", "error_type"}) // error_type can be "timeout", "auth_failed", "network", etc.
 
 	// Connection timing metrics
-	MQTTConnectionTime = promauto.NewHistogramVec(prometheus.HistogramOpts{
+	MQTTConnectionTime = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "mqtt_benchmark_connection_time_seconds",
 		Help:    "Time taken to establish MQTT connections",
-		Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // from 1ms to ~1s
-	}, []string{"broker"})
+		Buckets: prometheus.ExponentialBuckets(0.001, 1.5, 30),
+	})
 
 	// Connection rate metrics
 	MQTTConnectionRateLimit = promauto.NewGauge(prometheus.GaugeOpts{
@@ -128,7 +128,6 @@ var (
 		Help:    "Size of received message payloads in bytes",
 		Buckets: prometheus.ExponentialBuckets(64, 2, 10), // from 64B to ~32KB
 	})
-
 )
 
 func GetCounterVecValue(metric *prometheus.CounterVec, labelValues ...string) float64 {
@@ -166,4 +165,3 @@ func GetGaugeVecValue(metric *prometheus.GaugeVec, labelValues ...string) float6
 	}
 	return m.Gauge.GetValue()
 }
-

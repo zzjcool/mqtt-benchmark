@@ -42,6 +42,8 @@ connection rate, number of clients, and authentication settings.`,
 			log.Error("Failed to keep connections", zap.Error(err))
 			os.Exit(1)
 		}
+
+		connManager.DisconnectAll()
 	},
 }
 

@@ -72,16 +72,22 @@ func (m *ConnectionManager) RunConnections() error {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
 
+		var lastConnectedCount uint32
 		for {
 			select {
 			case <-ticker.C:
 				connectedCount := uint32(metrics.GetGaugeVecValue(metrics.MQTTConnections, m.options.Servers...))
 				remaining := m.options.ClientNum - (connectedCount + failedCount)
 
+				// Calculate connection rate (connections per second)
+				connectionRate := connectedCount - lastConnectedCount
+				lastConnectedCount = connectedCount
+
 				m.log.Info("Connection progress",
 					zap.Uint32("connected", connectedCount),
 					zap.Uint32("failed", failedCount),
-					zap.Uint32("remaining", remaining))
+					zap.Uint32("remaining", remaining),
+					zap.Uint32("conn_rate", connectionRate))
 			case <-progressDone:
 				m.log.Info("Connection progress done")
 				return
@@ -173,7 +179,7 @@ func (m *ConnectionManager) RunConnections() error {
 					atomic.AddUint32(&failedCount, 1)
 					return
 				}
-				metrics.MQTTConnectionTime.WithLabelValues(serverAddr).Observe(time.Since(startTime).Seconds())
+				metrics.MQTTConnectionTime.Observe(time.Since(startTime).Seconds())
 				clientChan <- client
 			} else {
 				m.log.Error("Connection timeout",
