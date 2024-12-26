@@ -9,12 +9,12 @@ import (
 type TopicGenerator struct {
 	TopicTemplate string
 	TopicNum      int
-	ClientIndex   int
+	ClientIndex   uint32
 	CurrentIndex  int
 }
 
 // NewTopicGenerator creates a new TopicGenerator
-func NewTopicGenerator(topicTemplate string, topicNum int, clientIndex int) *TopicGenerator {
+func NewTopicGenerator(topicTemplate string, topicNum int, clientIndex uint32) *TopicGenerator {
 	return &TopicGenerator{
 		TopicTemplate: topicTemplate,
 		TopicNum:     topicNum,

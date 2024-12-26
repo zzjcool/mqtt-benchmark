@@ -1,7 +1,6 @@
 package mqtt
 
 import (
-	"context"
 	"crypto/rand"
 	"sync"
 	"time"
@@ -15,7 +14,7 @@ import (
 
 // Publisher handles MQTT message publishing operations
 type Publisher struct {
-	options        *Options
+	optionsCtx     *OptionsCtx
 	topicGenerator *TopicGenerator
 	payload        string
 	payloadSize    int
@@ -29,17 +28,17 @@ type Publisher struct {
 }
 
 // NewPublisher creates a new Publisher
-func NewPublisher(options *Options, topic string, topicNum int, clientIndex int, payload string, payloadSize int, qos int, count int, rate float64) *Publisher {
+func NewPublisher(options *OptionsCtx, topic string, topicNum int, clientIndex uint32, payload string, payloadSize int, qos int, count int, rate float64) *Publisher {
 	topicGenerator := NewTopicGenerator(topic, topicNum, clientIndex)
 
 	return &Publisher{
-		options:        options,
+		optionsCtx:     options,
 		topicGenerator: topicGenerator,
 		payload:        payload,
 		payloadSize:    payloadSize,
 		qos:            qos,
 		count:          count,
-		rate:          rate,
+		rate:           rate,
 		timeout:        5 * time.Second,
 		log:            logger.GetLogger(),
 		withTimestamp:  false,
@@ -100,8 +99,8 @@ func (p *Publisher) generateRandomPayload() []byte {
 	return payload
 }
 
-// publishWithRetry attempts to publish a message with retry logic
-func (p *Publisher) publishWithRetry(client mqtt.Client, topicGen *TopicGenerator, wg *sync.WaitGroup) error {
+// publish attempts to publish a message with retry logic
+func (p *Publisher) publish(client mqtt.Client, topicGen *TopicGenerator, wg *sync.WaitGroup) error {
 
 	// Generate payload
 	payload := p.generateRandomPayload()
@@ -156,9 +155,40 @@ func (p *Publisher) RunPublish() error {
 		zap.Int64("timeout_seconds", int64(p.timeout/time.Second)))
 
 	// Create connection manager with auto reconnect enabled
-	p.options.ConnectRetryInterval = 5 // 5 seconds retry interval
+	p.optionsCtx.ConnectRetryInterval = 5 // 5 seconds retry interval
 
-	connManager := NewConnectionManager(p.options, 0)
+	var wg sync.WaitGroup
+	p.optionsCtx.OnConnect = func(client mqtt.Client, idx uint32) {
+		clientOptionsReader := client.OptionsReader()
+		clientID := clientOptionsReader.ClientID()
+		// Create a new TopicGenerator for each client with its own clientID
+		clientTopicGen := NewTopicGenerator(p.topicGenerator.TopicTemplate, p.topicGenerator.TopicNum, idx)
+		p.log.Debug("Publisher goroutine started",
+			zap.Uint32("client_id", idx))
+		limiter := rate.NewLimiter(rate.Limit(p.rate), 1)
+		for {
+			select {
+			case <-p.optionsCtx.Done():
+				p.log.Debug("Publisher goroutine cancelled", zap.String("client_id", clientID))
+				return
+			default:
+				// Wait for rate limiter
+				if err := limiter.Wait(p.optionsCtx); err != nil {
+					p.log.Error("Rate limiter error",
+						zap.Error(err),
+						zap.String("client_id", clientID))
+					return
+				}
+
+				p.publish(client, clientTopicGen, &wg)
+
+			}
+		}
+	}
+
+	p.report()
+
+	connManager := NewConnectionManager(p.optionsCtx, 0)
 	if err := connManager.RunConnections(); err != nil {
 		return err
 	}
@@ -170,16 +200,26 @@ func (p *Publisher) RunPublish() error {
 		return nil
 	}
 
+	// Wait for all publishers to complete
+	wg.Wait()
+
+	<-p.optionsCtx.Done()
+
+	p.log.Info("Publish test completed")
+
+	// Disconnect all clients
+	connManager.DisconnectAll()
+	return nil
+}
+
+func (p *Publisher) report() {
 	// Initialize metrics
 	metrics.MQTTPublishTotal.Add(0)
 	metrics.MQTTPublishSuccessTotal.Add(0)
 	metrics.MQTTPublishFailureTotal.Add(0)
 	// Calculate target rate as messages per second for all clients
-	targetRate := float64(len(clients)) * p.rate
+	targetRate := float64(p.optionsCtx.ClientNum) * p.rate
 	metrics.MQTTPublishRate.Set(targetRate)
-
-	// Start a goroutine to track actual publish rate
-	stopRateTracker := make(chan struct{})
 
 	go func() {
 		ticker := time.NewTicker(time.Second)
@@ -188,10 +228,10 @@ func (p *Publisher) RunPublish() error {
 		prePublishLatencyTotal := float64(metrics.GetHistogramValue(metrics.MQTTPublishLatency))
 		for {
 			select {
-			case <-stopRateTracker:
+			case <-p.optionsCtx.Done():
 				return
 			case <-ticker.C:
-				connectedCount := uint32(metrics.GetGaugeVecValue(metrics.MQTTConnections, p.options.Servers...))
+				connectedCount := uint32(metrics.GetGaugeVecValue(metrics.MQTTConnections, p.optionsCtx.Servers...))
 				publishSuccessTotal := uint64(metrics.GetCounterValue(metrics.MQTTPublishSuccessTotal))
 				publishLatencyTotal := float64(metrics.GetHistogramValue(metrics.MQTTPublishLatency))
 				rate := publishSuccessTotal - prePublishSuccessTotal
@@ -212,65 +252,4 @@ func (p *Publisher) RunPublish() error {
 		}
 	}()
 
-	// Create error channel to track fatal errors
-	errChan := make(chan error, len(clients))
-	var wg sync.WaitGroup
-	ctx := context.Background()
-
-	for i, client := range clients {
-		wg.Add(1)
-		// Create rate limiter for each client based on desired messages per second
-		clientLimiter := rate.NewLimiter(rate.Limit(p.rate), 1)
-		go func(c mqtt.Client, clientID int, limiter *rate.Limiter) {
-			defer wg.Done()
-			// Create a new TopicGenerator for each client with its own clientID
-			clientTopicGen := NewTopicGenerator(p.topicGenerator.TopicTemplate, p.topicGenerator.TopicNum, clientID)
-			p.log.Debug("Publisher goroutine started",
-				zap.Int("client_id", clientID))
-
-			for msgNum := 0; p.count == 0 || msgNum < p.count/len(clients); msgNum++ {
-				select {
-				case <-ctx.Done():
-					p.log.Debug("Publisher goroutine cancelled", zap.Int("client_id", clientID))
-					return
-				default:
-					// Wait for rate limiter
-					if err := limiter.Wait(ctx); err != nil {
-						p.log.Error("Rate limiter error",
-							zap.Error(err),
-							zap.Int("client_id", clientID))
-						errChan <- err
-						return
-					}
-
-					p.publishWithRetry(c, clientTopicGen, &wg)
-
-				}
-			}
-			p.log.Debug("Publisher goroutine completed",
-				zap.Int("client_id", clientID),
-				zap.Int("messages_published", p.count/len(clients)))
-		}(client, i, clientLimiter)
-	}
-
-	// Wait for all publishers to complete
-	wg.Wait()
-	close(errChan)
-	close(stopRateTracker)
-
-	// Check for any errors
-	for err := range errChan {
-		if err != nil {
-			p.log.Error("Error during publishing", zap.Error(err))
-		}
-	}
-
-	p.log.Info("Publish test completed")
-
-	// Wait a short time to ensure all QoS 1/2 messages are acknowledged
-	time.Sleep(100 * time.Millisecond)
-
-	// Disconnect all clients
-	connManager.DisconnectAll()
-	return nil
 }

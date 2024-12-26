@@ -17,7 +17,7 @@ import (
 
 // Subscriber handles MQTT message subscription operations
 type Subscriber struct {
-	options        *Options
+	optionsCtx        *OptionsCtx
 	topicGenerator *TopicGenerator
 	qos            int
 	timeout        time.Duration
@@ -27,9 +27,9 @@ type Subscriber struct {
 }
 
 // NewSubscriber creates a new Subscriber
-func NewSubscriber(options *Options, topic string, topicNum int, clientIndex int, qos int) *Subscriber {
+func NewSubscriber(options *OptionsCtx, topic string, topicNum int, clientIndex uint32, qos int) *Subscriber {
 	return &Subscriber{
-		options:        options,
+		optionsCtx:        options,
 		topicGenerator: NewTopicGenerator(topic, topicNum, clientIndex),
 		qos:            qos,
 		timeout:        5 * time.Second,
@@ -55,9 +55,9 @@ func (s *Subscriber) RunSubscribe() error {
 		zap.Int("qos", s.qos))
 
 	// Create connection manager with auto reconnect enabled
-	s.options.ConnectRetryInterval = 5 // 5 seconds retry interval
+	s.optionsCtx.ConnectRetryInterval = 5 // 5 seconds retry interval
 
-	connManager := NewConnectionManager(s.options, 0)
+	connManager := NewConnectionManager(s.optionsCtx, 0)
 	if err := connManager.RunConnections(); err != nil {
 		return err
 	}
@@ -82,12 +82,12 @@ func (s *Subscriber) RunSubscribe() error {
 	// Subscribe with each client
 	for i, client := range clients {
 		wg.Add(1)
-		go func(c mqtt.Client, clientID int) {
+		go func(c mqtt.Client, clientID uint32) {
 			defer wg.Done()
 			// Create a new TopicGenerator for each client with its own clientID
 			clientTopicGen := NewTopicGenerator(s.topicGenerator.TopicTemplate, s.topicGenerator.TopicNum, clientID)
 			s.log.Debug("Subscriber goroutine started",
-				zap.Int("client_id", clientID))
+				zap.Uint32("client_id", clientID))
 
 			// Start a goroutine to log message count every second
 			go func() {
@@ -145,7 +145,7 @@ func (s *Subscriber) RunSubscribe() error {
 							metrics.MQTTMessageReceiveLatency.Observe(latency)
 						} else {
 							s.log.Error("Failed to parse timestamp",
-								zap.Int("client_id", clientID),
+								zap.Uint32("client_id", clientID),
 								zap.String("topic", msg.Topic()),
 								zap.Int("qos", int(msg.Qos())),
 								zap.Int("payload_size", len(msg.Payload())),
@@ -155,7 +155,7 @@ func (s *Subscriber) RunSubscribe() error {
 				}
 
 				s.log.Debug("Message received",
-					zap.Int("client_id", clientID),
+					zap.Uint32("client_id", clientID),
 					zap.String("topic", msg.Topic()),
 					zap.Int("qos", int(msg.Qos())),
 					zap.Int("payload_size", len(msg.Payload())),
@@ -171,19 +171,19 @@ func (s *Subscriber) RunSubscribe() error {
 					if err := token.Error(); err != nil {
 						metrics.MQTTSubscriptionErrors.WithLabelValues(topic, "subscription_failed").Inc()
 						s.log.Error("Failed to subscribe",
-							zap.Int("client_id", clientID),
+							zap.Uint32("client_id", clientID),
 							zap.Error(err))
 						errChan <- err
 						return
 					}
 					s.log.Debug("Successfully subscribed",
-						zap.Int("client_id", clientID),
+						zap.Uint32("client_id", clientID),
 						zap.String("topic", topic))
 				} else {
 					err := fmt.Errorf("subscription timeout for client %d", clientID)
 					metrics.MQTTSubscriptionErrors.WithLabelValues(topic, "timeout").Inc()
 					s.log.Error("Subscription timeout",
-						zap.Int("client_id", clientID))
+						zap.Uint32("client_id", clientID))
 					errChan <- err
 					return
 				}
@@ -191,7 +191,7 @@ func (s *Subscriber) RunSubscribe() error {
 
 			// Keep the goroutine running to receive messages
 			<-ctx.Done()
-		}(client, i)
+		}(client, uint32(i))
 	}
 
 	// Wait for all subscribers to complete

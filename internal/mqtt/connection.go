@@ -30,7 +30,7 @@ type ConnectionResult struct {
 
 // ConnectionManager handles MQTT connection operations
 type ConnectionManager struct {
-	options       *Options
+	optionsCtx       *OptionsCtx
 	log           *zap.Logger
 	activeClients []mqtt.Client
 	clientsMutex  sync.Mutex
@@ -38,9 +38,9 @@ type ConnectionManager struct {
 }
 
 // NewConnectionManager creates a new ConnectionManager
-func NewConnectionManager(options *Options, keepTime int) *ConnectionManager {
+func NewConnectionManager(options *OptionsCtx, keepTime int) *ConnectionManager {
 	return &ConnectionManager{
-		options:  options,
+		optionsCtx:  options,
 		log:      logger.GetLogger(),
 		keepTime: keepTime,
 	}
@@ -49,19 +49,19 @@ func NewConnectionManager(options *Options, keepTime int) *ConnectionManager {
 // RunConnections establishes MQTT connections based on the configured options
 func (m *ConnectionManager) RunConnections() error {
 	// 设置连接速率限制指标
-	metrics.MQTTConnectionRateLimit.Set(float64(m.options.ConnRate))
-	metrics.MQTTConnectionPoolSize.Set(float64(m.options.ClientNum))
+	metrics.MQTTConnectionRateLimit.Set(float64(m.optionsCtx.ConnRate))
+	metrics.MQTTConnectionPoolSize.Set(float64(m.optionsCtx.ClientNum))
 
 	// Create rate limiter for connection attempts
-	limiter := rate.NewLimiter(rate.Limit(m.options.ConnRate), 1)
+	limiter := rate.NewLimiter(rate.Limit(m.optionsCtx.ConnRate), 1)
 
 	// Create MQTT clients
 	m.clientsMutex.Lock()
 	defer m.clientsMutex.Unlock()
 
 	var wg sync.WaitGroup
-	clientChan := make(chan mqtt.Client, m.options.ClientNum)
-	errorChan := make(chan error, m.options.ClientNum)
+	clientChan := make(chan mqtt.Client, m.optionsCtx.ClientNum)
+	errorChan := make(chan error, m.optionsCtx.ClientNum)
 
 	// Add progress tracking
 	var failedCount uint32
@@ -76,8 +76,8 @@ func (m *ConnectionManager) RunConnections() error {
 		for {
 			select {
 			case <-ticker.C:
-				connectedCount := uint32(metrics.GetGaugeVecValue(metrics.MQTTConnections, m.options.Servers...))
-				remaining := m.options.ClientNum - (connectedCount + failedCount)
+				connectedCount := uint32(metrics.GetGaugeVecValue(metrics.MQTTConnections, m.optionsCtx.Servers...))
+				remaining := m.optionsCtx.ClientNum - (connectedCount + failedCount)
 
 				// Calculate connection rate (connections per second)
 				connectionRate := connectedCount - lastConnectedCount
@@ -95,7 +95,7 @@ func (m *ConnectionManager) RunConnections() error {
 		}
 	}()
 
-	for i := uint32(0); i < m.options.ClientNum; i++ {
+	for i := uint32(0); i < m.optionsCtx.ClientNum; i++ {
 		// Wait for rate limiter
 		if err := limiter.Wait(context.Background()); err != nil {
 			m.log.Error("Rate limiter error", zap.Error(err))
@@ -107,20 +107,20 @@ func (m *ConnectionManager) RunConnections() error {
 			defer wg.Done()
 
 			// Create unique client ID
-			clientID := fmt.Sprintf("%s-%d", m.options.ClientPrefix, index)
-			serverIndex := index % uint32(len(m.options.Servers))
-			serverAddr := m.options.Servers[serverIndex]
+			clientID := fmt.Sprintf("%s-%d", m.optionsCtx.ClientPrefix, index)
+			serverIndex := index % uint32(len(m.optionsCtx.Servers))
+			serverAddr := m.optionsCtx.Servers[serverIndex]
 
 			// Configure MQTT client options
 			opts := mqtt.NewClientOptions().
 				AddBroker(serverAddr).
 				SetClientID(clientID).
-				SetUsername(m.options.User).
-				SetPassword(m.options.Password).
-				SetCleanSession(m.options.CleanSession).
-				SetKeepAlive(time.Duration(m.options.KeepAliveSeconds) * time.Second).
+				SetUsername(m.optionsCtx.User).
+				SetPassword(m.optionsCtx.Password).
+				SetCleanSession(m.optionsCtx.CleanSession).
+				SetKeepAlive(time.Duration(m.optionsCtx.KeepAliveSeconds) * time.Second).
 				SetMaxReconnectInterval(10 * time.Second).
-				SetConnectTimeout(time.Duration(m.options.ConnectTimeout) * time.Second).
+				SetConnectTimeout(time.Duration(m.optionsCtx.ConnectTimeout) * time.Second).
 				SetAutoReconnect(true).
 				SetConnectRetry(true).
 				SetConnectRetryInterval(time.Second).
@@ -143,6 +143,9 @@ func (m *ConnectionManager) RunConnections() error {
 				m.log.Debug("Client connecting",
 					zap.String("client_id", clientID),
 					zap.String("broker", serverAddr))
+				if m.optionsCtx.OnConnectAttempt != nil {
+					return m.optionsCtx.OnConnectAttempt(broker, tlsCfg)
+				}
 				return tlsCfg
 			}
 
@@ -154,6 +157,9 @@ func (m *ConnectionManager) RunConnections() error {
 				metrics.MQTTConnectionAttempts.WithLabelValues(serverAddr, "success").Inc()
 				metrics.MQTTConnections.WithLabelValues(serverAddr).Inc()
 				metrics.MQTTNewConnections.WithLabelValues(serverAddr).Inc()
+				if m.optionsCtx.OnConnect != nil {
+					m.optionsCtx.OnConnect(c, index)
+				}
 			}
 
 			// Set connection lost handler
@@ -169,7 +175,7 @@ func (m *ConnectionManager) RunConnections() error {
 			client := mqtt.NewClient(opts)
 			startTime := time.Now()
 			token := client.Connect()
-			if token.WaitTimeout(time.Duration(m.options.ConnectTimeout) * time.Second) {
+			if token.WaitTimeout(time.Duration(m.optionsCtx.ConnectTimeout) * time.Second) {
 				if token.Error() != nil {
 					m.log.Error("Failed to connect",
 						zap.String("client_id", clientID),
