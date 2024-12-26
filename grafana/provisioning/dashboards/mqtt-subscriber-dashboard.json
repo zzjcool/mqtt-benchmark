@@ -18,7 +18,7 @@
   "editable": true,
   "fiscalYearStartMonth": 0,
   "graphTooltip": 0,
-  "id": 2,
+  "id": 4,
   "links": [],
   "panels": [
     {
@@ -509,11 +509,17 @@
             "type": "prometheus",
             "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum(rate(mqtt_benchmark_message_payload_size_bytes_bucket[1m])) by (le))",
+          "editorMode": "code",
+          "exemplar": false,
+          "expr": "sum(rate(mqtt_benchmark_message_payload_size_bytes_sum[15s])) / sum(rate(mqtt_benchmark_message_payload_size_bytes_count[15s]))",
+          "instant": false,
+          "interval": "",
+          "legendFormat": "message payload size",
+          "range": true,
           "refId": "A"
         }
       ],
-      "title": "Message Payload Size (p95)",
+      "title": "Message Payload Size",
       "type": "timeseries"
     },
     {
@@ -627,6 +633,6 @@
   "timezone": "",
   "title": "MQTT Subscriber Metrics",
   "uid": "ce7gndhzkctfkc",
-  "version": 1,
+  "version": 2,
   "weekStart": ""
 }
