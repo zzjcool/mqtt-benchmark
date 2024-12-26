@@ -157,7 +157,6 @@ func (p *Publisher) RunPublish() error {
 
 	// Create connection manager with auto reconnect enabled
 	p.options.ConnectRetryInterval = 5 // 5 seconds retry interval
-	p.options.ConnectTimeout = 5       // 5 seconds connect timeout
 
 	connManager := NewConnectionManager(p.options, 0)
 	if err := connManager.RunConnections(); err != nil {

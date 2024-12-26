@@ -31,6 +31,7 @@ const (
 	FlagMetricsPort    = "metrics-port"
 	FlagPprofPort      = "pprof-port"
 	FlagClientPrefix   = "client-prefix"
+	FlagConnectTimeout = "connect-timeout"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -105,6 +106,7 @@ func init() {
 	rootCmd.PersistentFlags().Int(FlagKeepAlive, 60, "keepalive interval in seconds")
 	rootCmd.PersistentFlags().Int(FlagRetryConnect, 0, "number of times to retry establishing a connection before giving up")
 	rootCmd.PersistentFlags().IntP(FlagConnRate, "R", 0, "connection rate(/s), default: 0")
+	rootCmd.PersistentFlags().Int(FlagConnectTimeout, 5, "connect timeout in seconds, default: 5")
 
 	// Add metrics flag
 	rootCmd.PersistentFlags().Int(FlagMetricsPort, 2112, "Port to expose Prometheus metrics")
@@ -146,11 +148,16 @@ func fillMqttOptions(cmd *cobra.Command) *mqtt.Options {
 		panic(err)
 	}
 
+	if o.ConnectTimeout, err = cmd.Flags().GetInt(FlagConnectTimeout); err != nil {
+		panic(err)
+	}
+
 	numRetry, err := cmd.Flags().GetInt(FlagRetryConnect)
 	if err != nil {
 		panic(err)
 	}
-	o.AutoReconnect = numRetry > 0
+	o.ConnectRetry = numRetry > 0
+	o.ConnectRetryInterval = numRetry
 
 	// Set ClientIndex from environment variable or use 0 as default
 	if indexStr := os.Getenv("MQTT_CLIENT_INDEX"); indexStr != "" {

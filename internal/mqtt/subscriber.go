@@ -56,7 +56,6 @@ func (s *Subscriber) RunSubscribe() error {
 
 	// Create connection manager with auto reconnect enabled
 	s.options.ConnectRetryInterval = 5 // 5 seconds retry interval
-	s.options.ConnectTimeout = 30      // 30 seconds connect timeout
 
 	connManager := NewConnectionManager(s.options, 0)
 	if err := connManager.RunConnections(); err != nil {

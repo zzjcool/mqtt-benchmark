@@ -114,6 +114,7 @@ func (m *ConnectionManager) RunConnections() error {
 				SetCleanSession(m.options.CleanSession).
 				SetKeepAlive(time.Duration(m.options.KeepAliveSeconds) * time.Second).
 				SetMaxReconnectInterval(10 * time.Second).
+				SetConnectTimeout(time.Duration(m.options.ConnectTimeout) * time.Second).
 				SetAutoReconnect(true).
 				SetConnectRetry(true).
 				SetConnectRetryInterval(time.Second).
