@@ -3,6 +3,7 @@ package mqtt
 import (
 	"context"
 	"crypto/tls"
+	"errors"
 	"fmt"
 	"net/url"
 	"os"
@@ -30,7 +31,7 @@ type ConnectionResult struct {
 
 // ConnectionManager handles MQTT connection operations
 type ConnectionManager struct {
-	optionsCtx       *OptionsCtx
+	optionsCtx    *OptionsCtx
 	log           *zap.Logger
 	activeClients []mqtt.Client
 	clientsMutex  sync.Mutex
@@ -40,9 +41,9 @@ type ConnectionManager struct {
 // NewConnectionManager creates a new ConnectionManager
 func NewConnectionManager(options *OptionsCtx, keepTime int) *ConnectionManager {
 	return &ConnectionManager{
-		optionsCtx:  options,
-		log:      logger.GetLogger(),
-		keepTime: keepTime,
+		optionsCtx: options,
+		log:        logger.GetLogger(),
+		keepTime:   keepTime,
 	}
 }
 
@@ -50,7 +51,6 @@ func NewConnectionManager(options *OptionsCtx, keepTime int) *ConnectionManager 
 func (m *ConnectionManager) RunConnections() error {
 	// 设置连接速率限制指标
 	metrics.MQTTConnectionRateLimit.Set(float64(m.optionsCtx.ConnRate))
-	metrics.MQTTConnectionPoolSize.Set(float64(m.optionsCtx.ClientNum))
 
 	// Create rate limiter for connection attempts
 	limiter := rate.NewLimiter(rate.Limit(m.optionsCtx.ConnRate), 1)
@@ -61,7 +61,18 @@ func (m *ConnectionManager) RunConnections() error {
 
 	var wg sync.WaitGroup
 	clientChan := make(chan mqtt.Client, m.optionsCtx.ClientNum)
-	errorChan := make(chan error, m.optionsCtx.ClientNum)
+
+	go func() {
+		for {
+			select {
+			case client := <-clientChan:
+				m.activeClients = append(m.activeClients, client)
+			case <-m.optionsCtx.Done():
+				m.log.Debug("Connection collection goroutine cancelled")
+				return
+			}
+		}
+	}()
 
 	// Add progress tracking
 	var failedCount uint32
@@ -75,6 +86,9 @@ func (m *ConnectionManager) RunConnections() error {
 		var lastConnectedCount uint32
 		for {
 			select {
+			case <-m.optionsCtx.Done():
+				m.log.Debug("Connection progress goroutine cancelled")
+				return
 			case <-ticker.C:
 				connectedCount := uint32(metrics.GetGaugeVecValue(metrics.MQTTConnections, m.optionsCtx.Servers...))
 				remaining := m.optionsCtx.ClientNum - (connectedCount + failedCount)
@@ -97,7 +111,11 @@ func (m *ConnectionManager) RunConnections() error {
 
 	for i := uint32(0); i < m.optionsCtx.ClientNum; i++ {
 		// Wait for rate limiter
-		if err := limiter.Wait(context.Background()); err != nil {
+		if err := limiter.Wait(m.optionsCtx); err != nil {
+			if errors.Is(err, context.Canceled) {
+				m.log.Debug("Connection manager cancelled")
+				return nil
+			}
 			m.log.Error("Rate limiter error", zap.Error(err))
 			continue
 		}
@@ -181,7 +199,6 @@ func (m *ConnectionManager) RunConnections() error {
 						zap.String("client_id", clientID),
 						zap.Error(token.Error()))
 					metrics.MQTTConnectionAttempts.WithLabelValues(serverAddr, "failure").Inc()
-					errorChan <- token.Error()
 					atomic.AddUint32(&failedCount, 1)
 					return
 				}
@@ -191,7 +208,6 @@ func (m *ConnectionManager) RunConnections() error {
 				m.log.Error("Connection timeout",
 					zap.String("client_id", clientID))
 				metrics.MQTTConnectionAttempts.WithLabelValues(serverAddr, "failure").Inc()
-				errorChan <- fmt.Errorf("connection timeout for client %s", clientID)
 				atomic.AddUint32(&failedCount, 1)
 				return
 			}
@@ -201,19 +217,7 @@ func (m *ConnectionManager) RunConnections() error {
 	// Wait for all goroutines to complete
 	wg.Wait()
 	close(clientChan)
-	close(errorChan)
 	close(progressDone)
-
-	// Collect successful connections
-	for client := range clientChan {
-		m.activeClients = append(m.activeClients, client)
-	}
-
-	metrics.MQTTConnectionPoolActive.Set(float64(len(m.activeClients)))
-
-	if len(m.activeClients) == 0 {
-		return fmt.Errorf("no clients connected: %v", <-errorChan)
-	}
 
 	m.log.Info("All clients connected",
 		zap.Int("total_clients", len(m.activeClients)))

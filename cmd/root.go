@@ -8,6 +8,8 @@ import (
 	"fmt"
 	"net/http"
 	"os"
+	"os/signal"
+	"syscall"
 
 	_ "net/http/pprof"
 
@@ -80,8 +82,19 @@ of MQTT broker performance including connection handling, publishing, and subscr
 // Execute adds all child commands to the root command and sets flags appropriately.
 // This is called by main.main(). It only needs to happen once to the rootCmd.
 func Execute() {
-	err := rootCmd.Execute()
-	if err != nil {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+
+	c := make(chan os.Signal, 1)
+	signal.Notify(c, os.Interrupt, syscall.SIGTERM)
+	go func() {
+		<-c
+		logger.GetLogger().Info("Received signal, shutting down...")
+		cancel()
+	}()
+
+	if err := rootCmd.ExecuteContext(ctx); err != nil {
+		logger.GetLogger().Error("Failed to execute command", zap.Error(err))
 		os.Exit(1)
 	}
 }
@@ -114,8 +127,7 @@ func init() {
 }
 
 func fillMqttOptions(cmd *cobra.Command) *mqtt.OptionsCtx {
-
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(cmd.Context())
 	o := &mqtt.OptionsCtx{
 		Context:    ctx,
 		CancelFunc: cancel,

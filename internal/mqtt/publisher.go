@@ -1,8 +1,9 @@
 package mqtt
 
 import (
+	"context"
 	"crypto/rand"
-	"sync"
+	"errors"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -100,7 +101,7 @@ func (p *Publisher) generateRandomPayload() []byte {
 }
 
 // publish attempts to publish a message with retry logic
-func (p *Publisher) publish(client mqtt.Client, topicGen *TopicGenerator, wg *sync.WaitGroup) error {
+func (p *Publisher) publish(client mqtt.Client, topicGen *TopicGenerator) error {
 
 	// Generate payload
 	payload := p.generateRandomPayload()
@@ -122,9 +123,7 @@ func (p *Publisher) publish(client mqtt.Client, topicGen *TopicGenerator, wg *sy
 	}
 
 	// For QoS 1 and 2, handle asynchronously
-	wg.Add(1)
 	go func() {
-		defer wg.Done()
 		if token.WaitTimeout(p.timeout) {
 			if token.Error() == nil {
 				metrics.MQTTPublishSuccessTotal.Inc()
@@ -157,7 +156,6 @@ func (p *Publisher) RunPublish() error {
 	// Create connection manager with auto reconnect enabled
 	p.optionsCtx.ConnectRetryInterval = 5 // 5 seconds retry interval
 
-	var wg sync.WaitGroup
 	p.optionsCtx.OnConnect = func(client mqtt.Client, idx uint32) {
 		clientOptionsReader := client.OptionsReader()
 		clientID := clientOptionsReader.ClientID()
@@ -174,13 +172,18 @@ func (p *Publisher) RunPublish() error {
 			default:
 				// Wait for rate limiter
 				if err := limiter.Wait(p.optionsCtx); err != nil {
+					if errors.Is(err, p.optionsCtx.Err()) {
+						p.log.Debug("Publisher goroutine cancelled",
+							zap.String("client_id", clientID))
+						return
+					}
 					p.log.Error("Rate limiter error",
 						zap.Error(err),
 						zap.String("client_id", clientID))
 					return
 				}
 
-				p.publish(client, clientTopicGen, &wg)
+				p.publish(client, clientTopicGen)
 
 			}
 		}
@@ -195,20 +198,22 @@ func (p *Publisher) RunPublish() error {
 
 	// Get active clients
 	clients := connManager.activeClients
+	defer connManager.DisconnectAll()
+
+	if errors.Is(p.optionsCtx.Err(), context.Canceled) {
+		return nil
+	}
 	if len(clients) == 0 {
 		p.log.Error("No active clients available")
 		return nil
 	}
-
-	// Wait for all publishers to complete
-	wg.Wait()
 
 	<-p.optionsCtx.Done()
 
 	p.log.Info("Publish test completed")
 
 	// Disconnect all clients
-	connManager.DisconnectAll()
+
 	return nil
 }
 
