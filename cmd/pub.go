@@ -30,8 +30,7 @@ message size, QoS level, publishing rate, and number of messages.`,
 		payloadSize, _ := cmd.Flags().GetInt(FlagPayloadSize)
 		qos, _ := cmd.Flags().GetInt(FlagQoS)
 		count, _ := cmd.Flags().GetInt(FlagCount)
-		rate, _ := cmd.Flags().GetInt(FlagRate)
-		interval, _ := cmd.Flags().GetInt(FlagInterval)
+		rate, _ := cmd.Flags().GetFloat64(FlagRate)
 		timeout, _ := cmd.Flags().GetInt(FlagTimeout)
 		withTimestamp, _ := cmd.Flags().GetBool(FlagWithTimestamp)
 
@@ -41,16 +40,11 @@ message size, QoS level, publishing rate, and number of messages.`,
 			os.Exit(1)
 		}
 
-		// Convert rate to interval if rate is specified
-		if rate > 0 {
-			interval = 1000 / rate // Convert messages/second to milliseconds interval
-		}
-
 		// Get MQTT options
 		options := fillMqttOptions(cmd)
 
 		// Create publisher
-		publisher := internalmqtt.NewPublisher(options, topic, topicNum, options.ClientIndex, payload, payloadSize, qos, count, interval)
+		publisher := internalmqtt.NewPublisher(options, topic, topicNum, options.ClientIndex, payload, payloadSize, qos, count, rate)
 		if timeout > 0 {
 			publisher.SetTimeout(time.Duration(timeout) * time.Second)
 		}
@@ -74,8 +68,7 @@ func init() {
 	pubCmd.Flags().Int(FlagPayloadSize, 100, "Size of random payload in bytes")
 	pubCmd.Flags().Int(FlagQoS, 0, "QoS level (0, 1, or 2)")
 	pubCmd.Flags().Int(FlagCount, 0, "Number of messages to publish, default 0 (infinite)")
-	pubCmd.Flags().Int(FlagRate, 0, "Messages per second per client (overrides interval if set)")
-	pubCmd.Flags().Int(FlagInterval, 1000, "Interval between messages in milliseconds")
+	pubCmd.Flags().Float64(FlagRate, 1.0, "Messages per second per client")
 	pubCmd.Flags().Int(FlagTimeout, 5, "Timeout for publish operations in seconds")
 	pubCmd.Flags().Bool(FlagWithTimestamp, false, "Add timestamp to the beginning of payload")
 }

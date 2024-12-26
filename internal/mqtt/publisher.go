@@ -21,7 +21,7 @@ type Publisher struct {
 	payloadSize    int
 	qos            int
 	count          int
-	interval       int
+	rate           float64 // Messages per second per client
 	timeout        time.Duration
 	log            *zap.Logger
 	withTimestamp  bool // Add timestamp to payload
@@ -29,7 +29,7 @@ type Publisher struct {
 }
 
 // NewPublisher creates a new Publisher
-func NewPublisher(options *Options, topic string, topicNum int, clientIndex int, payload string, payloadSize int, qos int, count int, interval int) *Publisher {
+func NewPublisher(options *Options, topic string, topicNum int, clientIndex int, payload string, payloadSize int, qos int, count int, rate float64) *Publisher {
 	topicGenerator := NewTopicGenerator(topic, topicNum, clientIndex)
 
 	return &Publisher{
@@ -39,7 +39,7 @@ func NewPublisher(options *Options, topic string, topicNum int, clientIndex int,
 		payloadSize:    payloadSize,
 		qos:            qos,
 		count:          count,
-		interval:       interval,
+		rate:          rate,
 		timeout:        5 * time.Second,
 		log:            logger.GetLogger(),
 		withTimestamp:  false,
@@ -152,7 +152,7 @@ func (p *Publisher) RunPublish() error {
 		zap.String("topic", p.topicGenerator.NextTopic()),
 		zap.Int("qos", p.qos),
 		zap.Int("count", p.count),
-		zap.Int("interval", p.interval),
+		zap.Float64("rate", p.rate),
 		zap.Int64("timeout_seconds", int64(p.timeout/time.Second)))
 
 	// Create connection manager with auto reconnect enabled
@@ -176,7 +176,7 @@ func (p *Publisher) RunPublish() error {
 	metrics.MQTTPublishSuccessTotal.Add(0)
 	metrics.MQTTPublishFailureTotal.Add(0)
 	// Calculate target rate as messages per second for all clients
-	targetRate := float64(len(clients)) * (1000.0 / float64(p.interval))
+	targetRate := float64(len(clients)) * p.rate
 	metrics.MQTTPublishRate.Set(targetRate)
 
 	// Start a goroutine to track actual publish rate
@@ -220,12 +220,8 @@ func (p *Publisher) RunPublish() error {
 
 	for i, client := range clients {
 		wg.Add(1)
-		// Create rate limiter for each client with burst = rate to allow catching up
-		burstSize := int(1000.0 / float64(p.interval))
-		if burstSize < 1 {
-			burstSize = 1
-		}
-		clientLimiter := rate.NewLimiter(rate.Limit(burstSize), 1)
+		// Create rate limiter for each client based on desired messages per second
+		clientLimiter := rate.NewLimiter(rate.Limit(p.rate), 1)
 		go func(c mqtt.Client, clientID int, limiter *rate.Limiter) {
 			defer wg.Done()
 			// Create a new TopicGenerator for each client with its own clientID
