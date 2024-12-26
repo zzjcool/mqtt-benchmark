@@ -4,7 +4,6 @@ import (
 	"context"
 	"crypto/rand"
 	"sync"
-	"sync/atomic"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -102,8 +101,15 @@ func (p *Publisher) generateRandomPayload() []byte {
 }
 
 // publishWithRetry attempts to publish a message with retry logic
-func (p *Publisher) publishWithRetry(client mqtt.Client, payload []byte, topicGen *TopicGenerator, wg *sync.WaitGroup) error {
+func (p *Publisher) publishWithRetry(client mqtt.Client, topicGen *TopicGenerator, wg *sync.WaitGroup) error {
+
+	// Generate payload
+	payload := p.generateRandomPayload()
 	topic := topicGen.NextTopic()
+	p.log.Debug("Publishing message",
+		zap.String("topic", topic),
+		zap.Int("payload_size", len(payload)))
+
 	startTime := time.Now()
 	token := client.Publish(topic, byte(p.qos), p.retain, payload)
 	metrics.MQTTPublishTotal.Inc()
@@ -174,34 +180,35 @@ func (p *Publisher) RunPublish() error {
 	metrics.MQTTPublishRate.Set(targetRate)
 
 	// Start a goroutine to track actual publish rate
-	publishCount := int64(0)
 	stopRateTracker := make(chan struct{})
 
 	go func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()
-		lastCount := atomic.LoadInt64(&publishCount)
-		lastTime := time.Now()
 		prePublishSuccessTotal := uint64(0)
+		prePublishLatencyTotal := float64(metrics.GetHistogramValue(metrics.MQTTPublishLatency))
 		for {
 			select {
 			case <-stopRateTracker:
 				return
 			case <-ticker.C:
-				currentCount := atomic.LoadInt64(&publishCount)
-				currentTime := time.Now()
-				duration := currentTime.Sub(lastTime).Seconds()
-				rate := float64(currentCount-lastCount) / duration
-				metrics.MQTTPublishActualRate.Set(rate)
-
 				connectedCount := uint32(metrics.GetGaugeVecValue(metrics.MQTTConnections, p.options.Servers...))
-
 				publishSuccessTotal := uint64(metrics.GetCounterValue(metrics.MQTTPublishSuccessTotal))
+				publishLatencyTotal := float64(metrics.GetHistogramValue(metrics.MQTTPublishLatency))
+				rate := publishSuccessTotal - prePublishSuccessTotal
+				metrics.MQTTPublishActualRate.Set(float64(rate))
+				avgLatency := 0.0
+				if rate != 0 {
+					avgLatency = (publishLatencyTotal - prePublishLatencyTotal) / float64(rate) * 1000
+				}
+
 				p.log.Info("Publishing at rate",
-					zap.Uint64("rate", publishSuccessTotal-prePublishSuccessTotal),
+					zap.Uint64("rate", rate),
 					zap.Uint64("publish_success_total", publishSuccessTotal),
-					zap.Uint32("connected", connectedCount))
+					zap.Uint32("connected", connectedCount),
+					zap.Uint16("publish_latency_ms", uint16(avgLatency)))
 				prePublishSuccessTotal = publishSuccessTotal
+				prePublishLatencyTotal = publishLatencyTotal
 			}
 		}
 	}()
@@ -218,7 +225,7 @@ func (p *Publisher) RunPublish() error {
 		if burstSize < 1 {
 			burstSize = 1
 		}
-		clientLimiter := rate.NewLimiter(rate.Every(time.Duration(p.interval)*time.Millisecond), burstSize)
+		clientLimiter := rate.NewLimiter(rate.Limit(burstSize), 1)
 		go func(c mqtt.Client, clientID int, limiter *rate.Limiter) {
 			defer wg.Done()
 			// Create a new TopicGenerator for each client with its own clientID
@@ -241,25 +248,8 @@ func (p *Publisher) RunPublish() error {
 						return
 					}
 
-					// Generate payload
-					payload := p.generateRandomPayload()
-					topic := clientTopicGen.NextTopic()
-					p.log.Debug("Publishing message",
-						zap.String("topic", topic),
-						zap.Int("client_id", clientID),
-						zap.Int("message_number", msgNum+1),
-						zap.Int("payload_size", len(payload)))
+					p.publishWithRetry(c, clientTopicGen, &wg)
 
-					// Publish with retry
-					if err := p.publishWithRetry(c, payload, clientTopicGen, &wg); err != nil {
-						p.log.Error("Failed to publish message after retries",
-							zap.Error(err),
-							zap.String("topic", topic),
-							zap.Int("client_id", clientID),
-							zap.Int("message_number", msgNum+1))
-					} else {
-						atomic.AddInt64(&publishCount, 1)
-					}
 				}
 			}
 			p.log.Debug("Publisher goroutine completed",

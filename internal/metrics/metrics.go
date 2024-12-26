@@ -64,12 +64,6 @@ var (
 		Help: "The total number of MQTT messages received",
 	})
 
-	MQTTMessageLatency = promauto.NewHistogram(prometheus.HistogramOpts{
-		Name:    "mqtt_benchmark_message_latency_seconds",
-		Help:    "The latency of MQTT messages",
-		Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // from 1ms to ~1s
-	})
-
 	// Publish metrics
 	MQTTPublishTotal = promauto.NewCounter(prometheus.CounterOpts{
 		Name: "mqtt_benchmark_publish_total",
@@ -99,7 +93,7 @@ var (
 	MQTTPublishLatency = promauto.NewHistogram(prometheus.HistogramOpts{
 		Name:    "mqtt_benchmark_publish_latency_seconds",
 		Help:    "Time taken to publish messages",
-		Buckets: prometheus.ExponentialBuckets(0.001, 2, 10), // from 1ms to ~1s
+		Buckets: prometheus.ExponentialBuckets(0.001, 1.5, 30),
 	})
 
 	// Subscriber metrics

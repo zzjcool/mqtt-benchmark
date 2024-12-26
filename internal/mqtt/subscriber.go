@@ -115,10 +115,9 @@ func (s *Subscriber) RunSubscribe() error {
 						}
 						s.log.Info("Received messages",
 							zap.Uint64("rate", rate),
-							zap.Uint64("count", messagesReceived),
 							zap.Uint64("received_total", messagesReceived),
 							zap.Uint64("average_payload", averagePayload),
-							zap.Float64("average_latency_ms", avgLatency),
+							zap.Uint16("consume_latency_ms", uint16(avgLatency)),
 						)
 
 						preMessagesReceived = messagesReceived
@@ -145,7 +144,7 @@ func (s *Subscriber) RunSubscribe() error {
 						if ts, err := time.Parse(time.RFC3339Nano, string(payload[:idx])); err == nil {
 							latency = time.Since(ts).Seconds()
 							metrics.MQTTMessageReceiveLatency.Observe(latency)
-						}else {
+						} else {
 							s.log.Error("Failed to parse timestamp",
 								zap.Int("client_id", clientID),
 								zap.String("topic", msg.Topic()),
