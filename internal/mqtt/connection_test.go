@@ -2,11 +2,11 @@ package mqtt
 
 import (
 	"context"
-	"testing"
-	"time"
-	"net/url"
 	"crypto/tls"
 	"net/http"
+	"net/url"
+	"testing"
+	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/stretchr/testify/assert"
@@ -24,30 +24,30 @@ func (m *mockClientOptionsReader) Servers() []*url.URL {
 	return []*url.URL{server}
 }
 
-func (m *mockClientOptionsReader) ClientID() string                       { return m.clientID }
-func (m *mockClientOptionsReader) Username() string                       { return "" }
-func (m *mockClientOptionsReader) Password() string                       { return "" }
-func (m *mockClientOptionsReader) CleanSession() bool                    { return true }
-func (m *mockClientOptionsReader) Order() bool                           { return true }
-func (m *mockClientOptionsReader) WillEnabled() bool                     { return false }
-func (m *mockClientOptionsReader) WillTopic() string                     { return "" }
-func (m *mockClientOptionsReader) WillPayload() []byte                   { return nil }
-func (m *mockClientOptionsReader) WillQos() byte                        { return 0 }
-func (m *mockClientOptionsReader) WillRetained() bool                   { return false }
-func (m *mockClientOptionsReader) ProtocolVersion() uint                { return 4 }
-func (m *mockClientOptionsReader) TLSConfig() *tls.Config              { return nil }
-func (m *mockClientOptionsReader) KeepAlive() time.Duration            { return 60 * time.Second }
-func (m *mockClientOptionsReader) PingTimeout() time.Duration          { return 10 * time.Second }
-func (m *mockClientOptionsReader) ConnectTimeout() time.Duration       { return 30 * time.Second }
-func (m *mockClientOptionsReader) MaxReconnectInterval() time.Duration { return 10 * time.Minute }
-func (m *mockClientOptionsReader) AutoReconnect() bool                 { return true }
-func (m *mockClientOptionsReader) WriteTimeout() time.Duration         { return 0 }
-func (m *mockClientOptionsReader) MessageChannelDepth() uint           { return 100 }
-func (m *mockClientOptionsReader) HTTPHeaders() http.Header            { return nil }
+func (m *mockClientOptionsReader) ClientID() string                         { return m.clientID }
+func (m *mockClientOptionsReader) Username() string                         { return "" }
+func (m *mockClientOptionsReader) Password() string                         { return "" }
+func (m *mockClientOptionsReader) CleanSession() bool                       { return true }
+func (m *mockClientOptionsReader) Order() bool                              { return true }
+func (m *mockClientOptionsReader) WillEnabled() bool                        { return false }
+func (m *mockClientOptionsReader) WillTopic() string                        { return "" }
+func (m *mockClientOptionsReader) WillPayload() []byte                      { return nil }
+func (m *mockClientOptionsReader) WillQos() byte                            { return 0 }
+func (m *mockClientOptionsReader) WillRetained() bool                       { return false }
+func (m *mockClientOptionsReader) ProtocolVersion() uint                    { return 4 }
+func (m *mockClientOptionsReader) TLSConfig() *tls.Config                   { return nil }
+func (m *mockClientOptionsReader) KeepAlive() time.Duration                 { return 60 * time.Second }
+func (m *mockClientOptionsReader) PingTimeout() time.Duration               { return 10 * time.Second }
+func (m *mockClientOptionsReader) ConnectTimeout() time.Duration            { return 30 * time.Second }
+func (m *mockClientOptionsReader) MaxReconnectInterval() time.Duration      { return 10 * time.Minute }
+func (m *mockClientOptionsReader) AutoReconnect() bool                      { return true }
+func (m *mockClientOptionsReader) WriteTimeout() time.Duration              { return 0 }
+func (m *mockClientOptionsReader) MessageChannelDepth() uint                { return 100 }
+func (m *mockClientOptionsReader) HTTPHeaders() http.Header                 { return nil }
 func (m *mockClientOptionsReader) WebsocketOptions() *mqtt.WebsocketOptions { return nil }
-func (m *mockClientOptionsReader) ConnectRetry() bool                  { return true }
-func (m *mockClientOptionsReader) ConnectRetryInterval() time.Duration { return 10 * time.Second }
-func (m *mockClientOptionsReader) ResumeSubs() bool                    { return true }
+func (m *mockClientOptionsReader) ConnectRetry() bool                       { return true }
+func (m *mockClientOptionsReader) ConnectRetryInterval() time.Duration      { return 10 * time.Second }
+func (m *mockClientOptionsReader) ResumeSubs() bool                         { return true }
 
 // mockMQTTClient implements mqtt.Client interface for testing
 type mockMQTTClient struct {
@@ -77,11 +77,11 @@ func (m *mockMQTTClient) Subscribe(string, byte, mqtt.MessageHandler) mqtt.Token
 func (m *mockMQTTClient) SubscribeMultiple(map[string]byte, mqtt.MessageHandler) mqtt.Token {
 	return newMockToken()
 }
-func (m *mockMQTTClient) Unsubscribe(...string) mqtt.Token        { return newMockToken() }
-func (m *mockMQTTClient) AddRoute(string, mqtt.MessageHandler)    {}
-func (m *mockMQTTClient) IsConnected() bool                       { return m.connected }
-func (m *mockMQTTClient) IsConnectionOpen() bool                  { return m.connected }
-func (m *mockMQTTClient) OptionsReader() mqtt.ClientOptionsReader { 
+func (m *mockMQTTClient) Unsubscribe(...string) mqtt.Token     { return newMockToken() }
+func (m *mockMQTTClient) AddRoute(string, mqtt.MessageHandler) {}
+func (m *mockMQTTClient) IsConnected() bool                    { return m.connected }
+func (m *mockMQTTClient) IsConnectionOpen() bool               { return m.connected }
+func (m *mockMQTTClient) OptionsReader() mqtt.ClientOptionsReader {
 	return mqtt.NewOptionsReader(m.opts)
 }
 
