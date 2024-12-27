@@ -79,6 +79,7 @@ func (m *ConnectionManager) RunConnections() error {
 				}
 				m.log.Debug("New client connected")
 				m.activeClients = append(m.activeClients, client)
+				wg.Done()
 			case <-m.optionsCtx.Done():
 				m.log.Debug("Connection collection goroutine cancelled")
 				return
@@ -134,7 +135,6 @@ func (m *ConnectionManager) RunConnections() error {
 
 		wg.Add(1)
 		go func(index uint32) {
-			defer wg.Done()
 
 			// Create unique client ID
 			clientID := fmt.Sprintf("%s-%d", m.optionsCtx.ClientPrefix, index)
@@ -155,7 +155,7 @@ func (m *ConnectionManager) RunConnections() error {
 				SetConnectRetry(true).
 				SetConnectRetryInterval(time.Second).
 				SetOrderMatters(false).
-				SetWriteTimeout(5 * time.Second).
+				SetWriteTimeout(time.Duration(m.optionsCtx.WriteTimeout) * time.Second).
 				SetMaxResumePubInFlight(1024)
 
 			opts.SetConnectionLostHandler(func(c mqtt.Client, err error) {

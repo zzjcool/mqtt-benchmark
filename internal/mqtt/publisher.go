@@ -49,7 +49,7 @@ func NewPublisher(options *OptionsCtx, topic string, topicNum int, clientIndex u
 		qos:            qos,
 		count:          count,
 		rate:           rate,
-		timeout:        5 * time.Second,
+		timeout:        time.Duration(options.WriteTimeout) * time.Second,
 		log:            logger.GetLogger(),
 		withTimestamp:  false,
 		retain:         false,
@@ -160,7 +160,7 @@ func (p *Publisher) asyncPublish(client mqtt.Client, topicGen *TopicGenerator) c
 		} else {
 			metrics.MQTTPublishFailureTotal.Inc()
 			timeoutErr := errors.New("publish operation timeout")
-			p.log.Warn(timeoutErr.Error(),
+			p.log.Debug(timeoutErr.Error(),
 				zap.String("topic", topic),
 				zap.Error(token.Error()),
 				zap.Duration("elapsed_time", time.Since(startTime)))

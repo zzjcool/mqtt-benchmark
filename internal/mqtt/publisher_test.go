@@ -108,6 +108,7 @@ func setupTestPublisher(topic string, payload string, payloadSize int, qos int, 
 		Servers:     []string{"tcp://localhost:1883"},
 		ClientNum:   1,
 		ClientIndex: 0,
+		WriteTimeout: 5,
 	}
 
 	options.OnConnect = func(client mqtt.Client, idx uint32) {

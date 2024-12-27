@@ -5,7 +5,6 @@ package cmd
 
 import (
 	"os"
-	"time"
 
 	"github.com/spf13/cobra"
 	"github.com/zzjcool/mqtt-benchmark/internal/logger"
@@ -31,7 +30,7 @@ message size, QoS level, publishing rate, and number of messages.`,
 		qos, _ := cmd.Flags().GetInt(FlagQoS)
 		count, _ := cmd.Flags().GetInt(FlagCount)
 		rate, _ := cmd.Flags().GetFloat64(FlagRate)
-		timeout, _ := cmd.Flags().GetInt(FlagTimeout)
+
 		withTimestamp, _ := cmd.Flags().GetBool(FlagWithTimestamp)
 		inflight, _ := cmd.Flags().GetInt(FlagInflight)
 
@@ -46,9 +45,6 @@ message size, QoS level, publishing rate, and number of messages.`,
 
 		// Create publisher
 		publisher := internalmqtt.NewPublisher(options, topic, topicNum, options.ClientIndex, payload, payloadSize, qos, count, rate)
-		if timeout > 0 {
-			publisher.SetTimeout(time.Duration(timeout) * time.Second)
-		}
 		publisher.SetWithTimestamp(withTimestamp)
 		publisher.SetInflight(inflight)
 

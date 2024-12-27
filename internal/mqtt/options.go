@@ -29,6 +29,7 @@ type OptionsCtx struct {
 	ConnectRetry         bool // Whether to retry connection
 	WaitForClients       bool // Whether to wait for other clients to be ready
 	Inflight            int  // Maximum inflight messages for QoS 1 and 2
+	WriteTimeout        int  // Write timeout in seconds
 
 	OnConnectAttempt func(broker *url.URL, tlsCfg *tls.Config) *tls.Config
 	OnConnect        func(client mqtt.Client, idx uint32)

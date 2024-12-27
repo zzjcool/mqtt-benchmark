@@ -21,20 +21,21 @@ import (
 )
 
 const (
-	FlagServers        = "servers"
-	FlagUser           = "user"
-	FlagPassword       = "pass"
-	FlagClientNum      = "clientNum"
-	FlagLogLevel       = "log-level"
-	FlagCleanSession   = "clean"
-	FlagKeepAlive      = "keepalive"
-	FlagRetryConnect   = "num-retry-connect"
-	FlagConnRate       = "connrate"
-	FlagMetricsPort    = "metrics-port"
-	FlagPprofPort      = "pprof-port"
-	FlagClientPrefix   = "client-prefix"
-	FlagConnectTimeout = "connect-timeout"
-	FlagInflight       = "inflight"
+	FlagServers          = "servers"
+	FlagUser             = "user"
+	FlagPassword         = "pass"
+	FlagClientNum        = "clientNum"
+	FlagLogLevel         = "log-level"
+	FlagCleanSession     = "clean"
+	FlagKeepAlive        = "keepalive"
+	FlagRetryConnect     = "num-retry-connect"
+	FlagConnRate         = "connrate"
+	FlagMetricsPort      = "metrics-port"
+	FlagPprofPort        = "pprof-port"
+	FlagClientPrefix     = "client-prefix"
+	FlagConnectTimeout   = "connect-timeout"
+	FlagInflight         = "inflight"
+	FlagWriteTimeout     = "write-timeout"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -120,7 +121,8 @@ func init() {
 	rootCmd.PersistentFlags().Int(FlagKeepAlive, 60, "keepalive interval in seconds")
 	rootCmd.PersistentFlags().Int(FlagRetryConnect, 0, "number of times to retry establishing a connection before giving up")
 	rootCmd.PersistentFlags().IntP(FlagConnRate, "R", 0, "connection rate(/s), default: 0")
-	rootCmd.PersistentFlags().Int(FlagConnectTimeout, 5, "connect timeout in seconds, default: 5")
+	rootCmd.PersistentFlags().Int(FlagConnectTimeout, 10, "Connection timeout in seconds")
+	rootCmd.PersistentFlags().Int(FlagWriteTimeout, 5, "Write timeout in seconds")
 
 	// Add metrics flag
 	rootCmd.PersistentFlags().Int(FlagMetricsPort, 2112, "Port to expose Prometheus metrics")
@@ -167,6 +169,9 @@ func fillMqttOptions(cmd *cobra.Command) *mqtt.OptionsCtx {
 	}
 
 	if o.ConnectTimeout, err = cmd.Flags().GetInt(FlagConnectTimeout); err != nil {
+		panic(err)
+	}
+	if o.WriteTimeout, err = cmd.Flags().GetInt(FlagWriteTimeout); err != nil {
 		panic(err)
 	}
 	if o.WaitForClients, err = cmd.Flags().GetBool(FlagWaitForClients); err != nil {
