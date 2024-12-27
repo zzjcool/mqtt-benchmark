@@ -113,8 +113,8 @@ func (p *Publisher) generateRandomPayload() []byte {
 	return payload
 }
 
-// publish attempts to publish a message with retry logic
-func (p *Publisher) publish(client mqtt.Client, topicGen *TopicGenerator) error {
+// asyncPublish attempts to asyncPublish a message
+func (p *Publisher) asyncPublish(client mqtt.Client, topicGen *TopicGenerator) chan error {
 
 	// Generate payload
 	payload := p.generateRandomPayload()
@@ -135,26 +135,33 @@ func (p *Publisher) publish(client mqtt.Client, topicGen *TopicGenerator) error 
 		return nil
 	}
 
+	result := make(chan error, 1)
 	// For QoS 1 and 2, handle asynchronously
 	go func() {
+		defer close(result)
 		if token.WaitTimeout(p.timeout) {
-			if token.Error() == nil {
+			err := token.Error()
+			if err == nil {
 				metrics.MQTTPublishSuccessTotal.Inc()
 				latency := time.Since(startTime)
 				metrics.MQTTPublishLatency.Observe(latency.Seconds())
-				return
+				result <- nil
+			} else {
+				metrics.MQTTPublishFailureTotal.Inc()
+				result <- err
 			}
-
 		} else {
-			p.log.Warn("Publish operation timed out",
+			metrics.MQTTPublishFailureTotal.Inc()
+			timeoutErr := errors.New("publish operation timeout")
+			p.log.Warn(timeoutErr.Error(),
 				zap.String("topic", topic),
+				zap.Error(token.Error()),
 				zap.Duration("elapsed_time", time.Since(startTime)))
+			result <- timeoutErr
 		}
-		metrics.MQTTPublishFailureTotal.Inc()
-
 	}()
 
-	return nil
+	return result
 }
 
 // RunPublish starts the publishing process
@@ -196,7 +203,7 @@ func (p *Publisher) RunPublish() error {
 					return
 				}
 
-				p.publish(client, clientTopicGen)
+				p.asyncPublish(client, clientTopicGen)
 
 			}
 		}
