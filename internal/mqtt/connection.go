@@ -65,7 +65,12 @@ func (m *ConnectionManager) RunConnections() error {
 	go func() {
 		for {
 			select {
-			case client := <-clientChan:
+			case client, ok := <-clientChan:
+				if !ok {
+					m.log.Debug("Client channel closed, stopping connection collection")
+					return
+				}
+				m.log.Debug("New client connected")
 				m.activeClients = append(m.activeClients, client)
 			case <-m.optionsCtx.Done():
 				m.log.Debug("Connection collection goroutine cancelled")
@@ -175,6 +180,9 @@ func (m *ConnectionManager) RunConnections() error {
 				metrics.MQTTConnectionAttempts.WithLabelValues(serverAddr, "success").Inc()
 				metrics.MQTTConnections.WithLabelValues(serverAddr).Inc()
 				metrics.MQTTNewConnections.WithLabelValues(serverAddr).Inc()
+				if m.optionsCtx.WaitForClients {
+					<-progressDone
+				}
 				if m.optionsCtx.OnConnect != nil {
 					m.optionsCtx.OnConnect(c, index)
 				}

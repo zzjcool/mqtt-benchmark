@@ -14,6 +14,7 @@ const (
 	FlagTimeout        = "timeout"
 	FlagWithTimestamp  = "with-timestamp"
 	FlagParseTimestamp = "parse-timestamp"
+	FlagWaitForClients = "wait-for-clients"
 )
 
 func init() {
@@ -27,6 +28,7 @@ func init() {
 	rootCmd.PersistentFlags().DurationP(FlagTimeout, "", 5*time.Second, "Timeout for operations")
 	rootCmd.PersistentFlags().BoolP(FlagWithTimestamp, "", false, "Add timestamp to message payload")
 	rootCmd.PersistentFlags().BoolP(FlagParseTimestamp, "", false, "Parse timestamp from message payload")
+	rootCmd.PersistentFlags().BoolP(FlagWaitForClients, "w", false, "Wait for other clients to be ready before publishing")
 
 	rootCmd.MarkPersistentFlagRequired(FlagTopic)
 }

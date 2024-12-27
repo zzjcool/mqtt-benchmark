@@ -26,6 +26,7 @@ type Publisher struct {
 	log            *zap.Logger
 	withTimestamp  bool // Add timestamp to payload
 	retain         bool
+	waitForClients bool
 }
 
 // NewPublisher creates a new Publisher
@@ -60,6 +61,11 @@ func (p *Publisher) SetWithTimestamp(withTimestamp bool) {
 // SetRetain sets whether to retain the message
 func (p *Publisher) SetRetain(retain bool) {
 	p.retain = retain
+}
+
+// SetWaitForClients sets whether to wait for other clients to be ready
+func (p *Publisher) SetWaitForClients(waitForClients bool) {
+	p.waitForClients = waitForClients
 }
 
 // generateRandomPayload generates a random payload of specified size
@@ -241,6 +247,10 @@ func (p *Publisher) report() {
 				publishLatencyTotal := float64(metrics.GetHistogramValue(metrics.MQTTPublishLatency))
 				rate := publishSuccessTotal - prePublishSuccessTotal
 				metrics.MQTTPublishActualRate.Set(float64(rate))
+
+				if connectedCount == 0 || rate == 0 {
+					continue
+				}
 				avgLatency := 0.0
 				if rate != 0 {
 					avgLatency = (publishLatencyTotal - prePublishLatencyTotal) / float64(rate) * 1000

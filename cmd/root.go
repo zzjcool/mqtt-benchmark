@@ -168,6 +168,9 @@ func fillMqttOptions(cmd *cobra.Command) *mqtt.OptionsCtx {
 	if o.ConnectTimeout, err = cmd.Flags().GetInt(FlagConnectTimeout); err != nil {
 		panic(err)
 	}
+	if o.WaitForClients, err = cmd.Flags().GetBool(FlagWaitForClients); err != nil {
+		panic(err)
+	}
 
 	numRetry, err := cmd.Flags().GetInt(FlagRetryConnect)
 	if err != nil {

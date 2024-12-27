@@ -27,6 +27,8 @@ type OptionsCtx struct {
 	ConnectRetryInterval int  // Seconds between connection retries
 	ConnectTimeout       int  // Connection timeout in seconds
 	ConnectRetry         bool // Whether to retry connection
+	WaitForClients       bool // Whether to wait for other clients to be ready
+
 
 	OnConnectAttempt func(broker *url.URL, tlsCfg *tls.Config) *tls.Config
 	OnConnect        func(client mqtt.Client, idx uint32)
