@@ -31,6 +31,13 @@ type Publisher struct {
 
 // NewPublisher creates a new Publisher
 func NewPublisher(options *OptionsCtx, topic string, topicNum int, clientIndex uint32, payload string, payloadSize int, qos int, count int, rate float64) *Publisher {
+	if options == nil {
+		panic("options cannot be nil")
+	}
+	if topicNum <= 0 {
+		panic("topicNum must be greater than 0")
+	}
+
 	topicGenerator := NewTopicGenerator(topic, topicNum, clientIndex)
 
 	return &Publisher{

@@ -50,7 +50,9 @@ func (g *TopicGenerator) GetTopic() string {
 	topic = strings.ReplaceAll(topic, "%i", fmt.Sprintf("%d", g.ClientIndex))
 	
 	if g.TopicNum > 0 {
-		topic = strings.ReplaceAll(topic, "%d", fmt.Sprintf("%d", g.CurrentIndex))
+		// Get the previous index since CurrentIndex has already been incremented
+		prevIndex := (g.CurrentIndex + g.TopicNum - 1) % g.TopicNum
+		topic = strings.ReplaceAll(topic, "%d", fmt.Sprintf("%d", prevIndex))
 	}
 	
 	return topic

@@ -242,15 +242,35 @@ func (m *ConnectionManager) KeepConnections() error {
 		m.log.Info("Keeping connections alive",
 			zap.Int("seconds", m.keepTime),
 			zap.Int("active_connections", len(m.activeClients)))
-		time.Sleep(time.Duration(m.keepTime) * time.Second)
+
+		// Use context with timeout instead of sleep
+		ctx := context.Background()
+		if m.optionsCtx != nil {
+			ctx = m.optionsCtx
+		}
+		timeoutCtx, cancel := context.WithTimeout(ctx, time.Duration(m.keepTime)*time.Second)
+		defer cancel()
+
+		select {
+		case <-timeoutCtx.Done():
+			if err := timeoutCtx.Err(); err != context.DeadlineExceeded {
+				return err
+			}
+		case <-m.optionsCtx.Done():
+			return m.optionsCtx.Err()
+		}
 	} else {
 		m.log.Info("Keeping connections alive forever. Press Ctrl+C to exit",
 			zap.Int("active_connections", len(m.activeClients)))
-		// 创建一个通道来处理信号
+		// Create a channel to handle signals
 		sigChan := make(chan os.Signal, 1)
 		signal.Notify(sigChan, syscall.SIGINT, syscall.SIGTERM)
-		<-sigChan
-		m.log.Info("Received signal, shutting down...")
+		select {
+		case <-sigChan:
+			m.log.Info("Received signal, shutting down...")
+		case <-m.optionsCtx.Done():
+			return m.optionsCtx.Err()
+		}
 	}
 
 	return m.DisconnectAll()
@@ -266,11 +286,18 @@ func (m *ConnectionManager) DisconnectAll() error {
 
 	for i, client := range m.activeClients {
 		opts := client.OptionsReader()
-		broker := opts.Servers()[0].String()
+		servers := opts.Servers()
+		if len(servers) == 0 {
+			m.log.Debug("Client has no servers configured",
+				zap.Int("client_index", i),
+				zap.String("client_id", opts.ClientID()))
+			continue
+		}
+		broker := servers[0].String()
 		m.log.Debug("Disconnecting client",
 			zap.Int("client_index", i),
 			zap.String("client_id", opts.ClientID()))
-		client.Disconnect(250) // 250ms 超时
+		client.Disconnect(250) // 250ms timeout
 		metrics.MQTTConnections.WithLabelValues(broker).Dec()
 	}
 
