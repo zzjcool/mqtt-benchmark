@@ -34,6 +34,7 @@ const (
 	FlagPprofPort      = "pprof-port"
 	FlagClientPrefix   = "client-prefix"
 	FlagConnectTimeout = "connect-timeout"
+	FlagInflight       = "inflight"
 )
 
 // rootCmd represents the base command when called without any subcommands

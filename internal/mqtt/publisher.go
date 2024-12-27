@@ -27,6 +27,7 @@ type Publisher struct {
 	withTimestamp  bool // Add timestamp to payload
 	retain         bool
 	waitForClients bool
+	inflight       int  // Maximum inflight messages for QoS 1 and 2
 }
 
 // NewPublisher creates a new Publisher
@@ -52,6 +53,7 @@ func NewPublisher(options *OptionsCtx, topic string, topicNum int, clientIndex u
 		log:            logger.GetLogger(),
 		withTimestamp:  false,
 		retain:         false,
+		inflight:       1,
 	}
 }
 
@@ -73,6 +75,11 @@ func (p *Publisher) SetRetain(retain bool) {
 // SetWaitForClients sets whether to wait for other clients to be ready
 func (p *Publisher) SetWaitForClients(waitForClients bool) {
 	p.waitForClients = waitForClients
+}
+
+// SetInflight sets the maximum number of inflight messages
+func (p *Publisher) SetInflight(inflight int) {
+	p.inflight = inflight
 }
 
 // generateRandomPayload generates a random payload of specified size
@@ -184,6 +191,15 @@ func (p *Publisher) RunPublish() error {
 		p.log.Debug("Publisher goroutine started",
 			zap.Uint32("client_id", idx))
 		limiter := rate.NewLimiter(rate.Limit(p.rate), 1)
+
+		inflightCh := make(chan struct{}, p.inflight)
+		if p.inflight > 0 {
+			// Initialize inflightCh with tokens
+			for i := 0; i < p.inflight; i++ {
+				inflightCh <- struct{}{}
+			}
+		}
+
 		for {
 			select {
 			case <-p.optionsCtx.Done():
@@ -203,8 +219,26 @@ func (p *Publisher) RunPublish() error {
 					return
 				}
 
-				p.asyncPublish(client, clientTopicGen)
+				// Check inflight limit if set
+				if p.inflight > 0 {
+					select {
+					case <-inflightCh:
+						// Got a token, proceed with publish
+					case <-p.optionsCtx.Done():
+						return
+					}
+				}
 
+				// Publish message
+				errCh := p.asyncPublish(client, clientTopicGen)
+
+				// Start a goroutine to handle the publish result
+				if p.inflight > 0 {
+					go func() {
+						<-errCh // Wait for publish to complete
+						inflightCh <- struct{}{} // Return the token
+					}()
+				}
 			}
 		}
 	}

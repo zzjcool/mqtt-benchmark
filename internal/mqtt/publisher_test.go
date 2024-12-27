@@ -96,18 +96,25 @@ func (m *mockMQTTClientWithPublish) OptionsReader() mqtt.ClientOptionsReader {
 // setupTestPublisher creates a test publisher with mock client
 func setupTestPublisher(topic string, payload string, payloadSize int, qos int, count int, rate float64) (*Publisher, *mockMQTTClientWithPublish) {
 	ctx, cancel := context.WithCancel(context.Background())
-	defer cancel()
 	
-	mockClient := &mockMQTTClientWithPublish{}
-	
-	opts := &OptionsCtx{
-		Context: ctx,
-		newClientFunc: func(opts *mqtt.ClientOptions) mqtt.Client {
-			return mockClient
-		},
+	mockClient := &mockMQTTClientWithPublish{
+		connected: true,
+		opts: mqtt.NewClientOptions(),
 	}
 
-	publisher := NewPublisher(opts, topic, 1, 0, payload, payloadSize, qos, count, rate)
+	options := &OptionsCtx{
+		Context:     ctx,
+		CancelFunc:  cancel,
+		Servers:     []string{"tcp://localhost:1883"},
+		ClientNum:   1,
+		ClientIndex: 0,
+	}
+
+	options.OnConnect = func(client mqtt.Client, idx uint32) {
+		// Do nothing in test
+	}
+
+	publisher := NewPublisher(options, topic, 1, 0, payload, payloadSize, qos, count, rate)
 	return publisher, mockClient
 }
 
@@ -253,5 +260,23 @@ func TestPublisher_PublishSuccess(t *testing.T) {
 	// Verify channel is closed
 	_, ok := <-errChan
 	assert.False(t, ok, "channel should be closed")
+	assert.True(t, mockClient.publishCalled)
+}
+
+func TestPublisher_PublishWithInflight(t *testing.T) {
+	// Create a publisher with inflight limit of 2
+	publisher, mockClient := setupTestPublisher("test", "", 100, 1, 5, 100.0)
+	publisher.SetInflight(2)
+	
+	// Mock client behavior
+	mockClient.connected = true
+	mockClient.publishDelay = 100 * time.Millisecond // Add delay to simulate network latency
+	
+	// Directly test the asyncPublish function
+	errCh := publisher.asyncPublish(mockClient, publisher.topicGenerator)
+	
+	// Wait for publish to complete
+	err := <-errCh
+	assert.NoError(t, err)
 	assert.True(t, mockClient.publishCalled)
 }

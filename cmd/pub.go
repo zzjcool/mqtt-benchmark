@@ -33,6 +33,7 @@ message size, QoS level, publishing rate, and number of messages.`,
 		rate, _ := cmd.Flags().GetFloat64(FlagRate)
 		timeout, _ := cmd.Flags().GetInt(FlagTimeout)
 		withTimestamp, _ := cmd.Flags().GetBool(FlagWithTimestamp)
+		inflight, _ := cmd.Flags().GetInt(FlagInflight)
 
 		// Validate topic template if topic-num is set
 		if err := internalmqtt.ValidateTopicTemplate(topic, topicNum); err != nil {
@@ -49,6 +50,7 @@ message size, QoS level, publishing rate, and number of messages.`,
 			publisher.SetTimeout(time.Duration(timeout) * time.Second)
 		}
 		publisher.SetWithTimestamp(withTimestamp)
+		publisher.SetInflight(inflight)
 
 		// Run publishing test
 		if err := publisher.RunPublish(); err != nil {
@@ -71,4 +73,5 @@ func init() {
 	pubCmd.Flags().Float64(FlagRate, 1.0, "Messages per second per client")
 	pubCmd.Flags().Int(FlagTimeout, 5, "Timeout for publish operations in seconds")
 	pubCmd.Flags().Bool(FlagWithTimestamp, false, "Add timestamp to the beginning of payload")
+	pubCmd.Flags().Int(FlagInflight, 1, "Maximum inflight messages for QoS 1 and 2, value 0 for 'infinity'")
 }
