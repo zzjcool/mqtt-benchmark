@@ -2,178 +2,322 @@ package mqtt
 
 import (
 	"context"
-	"crypto/tls"
-	"net/http"
-	"net/url"
+	"errors"
+	"sync"
 	"testing"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
+	"github.com/zzjcool/mqtt-benchmark/internal/logger"
+	"github.com/zzjcool/mqtt-benchmark/internal/metrics"
+	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
-	"golang.org/x/time/rate"
 )
 
-// mockClientOptionsReader implements mqtt.ClientOptionsReader interface for testing
-type mockClientOptionsReader struct {
-	broker   string
-	clientID string
+// mockToken implements mqtt.Token interface for testing
+type mockToken struct {
+	err      error
+	waitTime time.Duration
 }
 
-func (m *mockClientOptionsReader) Servers() []*url.URL {
-	server, _ := url.Parse(m.broker)
-	return []*url.URL{server}
+func (t *mockToken) Wait() bool                 { return true }
+func (t *mockToken) WaitTimeout(d time.Duration) bool {
+	if t.waitTime > d {
+		return false
+	}
+	time.Sleep(t.waitTime)
+	return true
 }
-
-func (m *mockClientOptionsReader) ClientID() string                         { return m.clientID }
-func (m *mockClientOptionsReader) Username() string                         { return "" }
-func (m *mockClientOptionsReader) Password() string                         { return "" }
-func (m *mockClientOptionsReader) CleanSession() bool                       { return true }
-func (m *mockClientOptionsReader) Order() bool                              { return true }
-func (m *mockClientOptionsReader) WillEnabled() bool                        { return false }
-func (m *mockClientOptionsReader) WillTopic() string                        { return "" }
-func (m *mockClientOptionsReader) WillPayload() []byte                      { return nil }
-func (m *mockClientOptionsReader) WillQos() byte                            { return 0 }
-func (m *mockClientOptionsReader) WillRetained() bool                       { return false }
-func (m *mockClientOptionsReader) ProtocolVersion() uint                    { return 4 }
-func (m *mockClientOptionsReader) TLSConfig() *tls.Config                   { return nil }
-func (m *mockClientOptionsReader) KeepAlive() time.Duration                 { return 60 * time.Second }
-func (m *mockClientOptionsReader) PingTimeout() time.Duration               { return 10 * time.Second }
-func (m *mockClientOptionsReader) ConnectTimeout() time.Duration            { return 30 * time.Second }
-func (m *mockClientOptionsReader) MaxReconnectInterval() time.Duration      { return 10 * time.Minute }
-func (m *mockClientOptionsReader) AutoReconnect() bool                      { return true }
-func (m *mockClientOptionsReader) WriteTimeout() time.Duration              { return 0 }
-func (m *mockClientOptionsReader) MessageChannelDepth() uint                { return 100 }
-func (m *mockClientOptionsReader) HTTPHeaders() http.Header                 { return nil }
-func (m *mockClientOptionsReader) WebsocketOptions() *mqtt.WebsocketOptions { return nil }
-func (m *mockClientOptionsReader) ConnectRetry() bool                       { return true }
-func (m *mockClientOptionsReader) ConnectRetryInterval() time.Duration      { return 10 * time.Second }
-func (m *mockClientOptionsReader) ResumeSubs() bool                         { return true }
+func (t *mockToken) Error() error              { return t.err }
+func (t *mockToken) Done() <-chan struct{}     { return nil }
 
 // mockMQTTClient implements mqtt.Client interface for testing
 type mockMQTTClient struct {
-	connected bool
-	opts      *mqtt.ClientOptions
-}
-
-func newMockMQTTClient() *mockMQTTClient {
-	opts := mqtt.NewClientOptions()
-	opts.AddBroker("tcp://localhost:1883")
-	opts.SetClientID("test-client")
-	return &mockMQTTClient{
-		connected: false,
-		opts:      opts,
-	}
+	mqtt.Client
+	connected    bool
+	disconnected bool
+	mu           sync.Mutex
+	opts         *mqtt.ClientOptions
+	connectErr   error
+	connectDelay time.Duration
 }
 
 func (m *mockMQTTClient) Connect() mqtt.Token {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	
+	if m.connectDelay > 0 {
+		return &mockToken{waitTime: m.connectDelay}
+	}
+	
+	if m.connectErr != nil {
+		return &mockToken{err: m.connectErr}
+	}
+	
 	m.connected = true
-	return newMockToken()
+	return &mockToken{}
 }
-func (m *mockMQTTClient) Disconnect(uint)                                    {}
-func (m *mockMQTTClient) Publish(string, byte, bool, interface{}) mqtt.Token { return newMockToken() }
-func (m *mockMQTTClient) Subscribe(string, byte, mqtt.MessageHandler) mqtt.Token {
-	return newMockToken()
+
+func (m *mockMQTTClient) IsConnected() bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.connected
 }
-func (m *mockMQTTClient) SubscribeMultiple(map[string]byte, mqtt.MessageHandler) mqtt.Token {
-	return newMockToken()
+
+func (m *mockMQTTClient) Disconnect(quiesce uint) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	m.connected = false
+	m.disconnected = true
 }
-func (m *mockMQTTClient) Unsubscribe(...string) mqtt.Token     { return newMockToken() }
-func (m *mockMQTTClient) AddRoute(string, mqtt.MessageHandler) {}
-func (m *mockMQTTClient) IsConnected() bool                    { return m.connected }
-func (m *mockMQTTClient) IsConnectionOpen() bool               { return m.connected }
+
 func (m *mockMQTTClient) OptionsReader() mqtt.ClientOptionsReader {
 	return mqtt.NewOptionsReader(m.opts)
 }
 
-// mockToken implements mqtt.Token interface for testing
-type mockToken struct {
-	err error
-	ch  chan struct{}
-}
-
-func newMockToken() *mockToken {
-	return &mockToken{
-		ch: make(chan struct{}, 1),
+// mockNewClientFunc is a test implementation of NewClientFunc
+func mockNewClientFunc(opts *mqtt.ClientOptions) mqtt.Client {
+	return &mockMQTTClient{
+		opts: opts,
 	}
 }
 
-func (m *mockToken) Wait() bool                     { return true }
-func (m *mockToken) WaitTimeout(time.Duration) bool { return true }
-func (m *mockToken) Done() <-chan struct{}          { return m.ch }
-func (m *mockToken) Error() error                   { return m.err }
-
-// newTestOptions creates a new OptionsCtx for testing
-func newTestOptions(ctx context.Context, cancel context.CancelFunc) *OptionsCtx {
-	return &OptionsCtx{
-		Context:       ctx,
-		CancelFunc:    cancel,
-		Servers:       []string{"tcp://localhost:1883"},
-		User:          "test",
-		Password:      "test",
-		ClientPrefix:  "test-client",
-		ClientNum:     1,
-		ConnRate:      10,
-		AutoReconnect: true,
-		CleanSession:  true,
+// mockNewClientFuncWithError returns a client that will fail to connect
+func mockNewClientFuncWithError(err error) NewClientFunc {
+	return func(opts *mqtt.ClientOptions) mqtt.Client {
+		return &mockMQTTClient{
+			opts:       opts,
+			connectErr: err,
+		}
 	}
 }
 
-func TestConnection(t *testing.T) {
+// mockNewClientFuncWithDelay returns a client that will delay before connecting
+func mockNewClientFuncWithDelay(delay time.Duration) NewClientFunc {
+	return func(opts *mqtt.ClientOptions) mqtt.Client {
+		return &mockMQTTClient{
+			opts:         opts,
+			connectDelay: delay,
+		}
+	}
+}
+
+// setupTest prepares a test environment
+func setupTest(t *testing.T) (*OptionsCtx, context.CancelFunc) {
+	// Initialize logger
+	logger.InitLogger("debug")
+
+	// Initialize metrics
+	reg := prometheus.NewRegistry()
+	metrics.MQTTConnectionRateLimit = prometheus.NewGauge(prometheus.GaugeOpts{
+		Name: "mqtt_connection_rate_limit",
+		Help: "MQTT connection rate limit",
+	})
+	metrics.MQTTConnections = prometheus.NewGaugeVec(prometheus.GaugeOpts{
+		Name: "mqtt_connections",
+		Help: "Number of active MQTT connections",
+	}, []string{"broker"})
+	metrics.MQTTConnectionAttempts = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "mqtt_connection_attempts",
+		Help: "Number of MQTT connection attempts",
+	}, []string{"broker", "result"})
+	metrics.MQTTConnectionErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "mqtt_connection_errors",
+		Help: "Number of MQTT connection errors",
+	}, []string{"broker", "type"})
+	metrics.MQTTConnectionTime = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name: "mqtt_connection_time",
+		Help: "MQTT connection time",
+	})
+	metrics.MQTTNewConnections = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "mqtt_new_connections",
+		Help: "Number of new MQTT connections",
+	}, []string{"broker"})
+
+	reg.MustRegister(
+		metrics.MQTTConnectionRateLimit,
+		metrics.MQTTConnections,
+		metrics.MQTTConnectionAttempts,
+		metrics.MQTTConnectionErrors,
+		metrics.MQTTConnectionTime,
+		metrics.MQTTNewConnections,
+	)
+
+	// Create context
 	ctx, cancel := context.WithCancel(context.Background())
+	
+	options := &OptionsCtx{
+		Context:          ctx,
+		CancelFunc:       cancel,
+		ConnRate:         100,
+		ClientNum:        2,
+		ClientPrefix:     "test-client",
+		Servers:          []string{"tcp://localhost:1883"},
+		ConnectTimeout:   5,
+		KeepAliveSeconds: 60,
+	}
+
+	return options, cancel
+}
+
+func TestSetNewClientFunc(t *testing.T) {
+	options, cancel := setupTest(t)
 	defer cancel()
 
-	options := newTestOptions(ctx, cancel)
+	manager := NewConnectionManager(options, 60)
 
-	t.Run("Test Connection Manager Creation", func(t *testing.T) {
-		manager := NewConnectionManager(options, 1)
-		assert.NotNil(t, manager)
-		assert.Equal(t, options, manager.optionsCtx)
-		assert.Equal(t, 1, manager.keepTime)
-	})
+	// Test default newClientFunc
+	assert.NotNil(t, manager.newClientFunc, "Default newClientFunc should not be nil")
 
-	t.Run("Test Connection Manager Operations", func(t *testing.T) {
-		manager := NewConnectionManager(options, 1)
+	// Set custom newClientFunc
+	manager.SetNewClientFunc(mockNewClientFunc)
 
-		// Add a mock client directly
-		mockClient := newMockMQTTClient()
-		manager.activeClients = append(manager.activeClients, mockClient)
-
-		// Test keep connections
-		err := manager.KeepConnections()
-		assert.NoError(t, err)
-
-		// Test disconnect all
-		err = manager.DisconnectAll()
-		assert.NoError(t, err)
-	})
-
-	t.Run("Test Connection Rate Limiter", func(t *testing.T) {
-		limiter := rate.NewLimiter(rate.Limit(10), 1) // 10 connections per second
-		assert.NotNil(t, limiter)
-
-		// Test rate limiting
-		start := time.Now()
-		err := limiter.Wait(context.Background())
-		assert.NoError(t, err)
-		duration := time.Since(start)
-
-		// First wait should be very quick
-		assert.Less(t, duration, 100*time.Millisecond)
-	})
+	// Verify the newClientFunc was changed
+	assert.NotNil(t, manager.newClientFunc, "Custom newClientFunc should not be nil")
+	
+	// Create a client using the mock function
+	client := manager.newClientFunc(mqtt.NewClientOptions())
+	assert.NotNil(t, client, "Client created with mock function should not be nil")
+	
+	// Test the mock client behavior
+	mockClient, ok := client.(*mockMQTTClient)
+	assert.True(t, ok, "Client should be of type mockMQTTClient")
+	assert.False(t, mockClient.IsConnected(), "New client should not be connected")
+	
+	mockClient.Connect()
+	assert.True(t, mockClient.IsConnected(), "Client should be connected after Connect()")
 }
 
-func TestConnectionHelpers(t *testing.T) {
-	t.Run("Test Connection Result", func(t *testing.T) {
-		result := &ConnectionResult{
-			ClientID: "test-client",
-			Broker:   "tcp://localhost:1883",
-			Success:  true,
-			Error:    nil,
-		}
+func TestRunConnections(t *testing.T) {
+	options, cancel := setupTest(t)
+	defer cancel()
+	
+	manager := NewConnectionManager(options, 1)
+	manager.SetNewClientFunc(mockNewClientFunc)
 
-		assert.Equal(t, "test-client", result.ClientID)
-		assert.Equal(t, "tcp://localhost:1883", result.Broker)
-		assert.True(t, result.Success)
-		assert.NoError(t, result.Error)
-	})
+	// Run connections
+	err := manager.RunConnections()
+	assert.NoError(t, err, "RunConnections should not return error")
+
+	// Wait for a short time to allow all connections to be established
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify that clients were created and connected
+	manager.clientsMutex.Lock()
+	assert.Equal(t, 2, len(manager.activeClients), "Should have created 2 clients")
+	for i, client := range manager.activeClients {
+		mockClient, ok := client.(*mockMQTTClient)
+		assert.True(t, ok, "Client %d should be mockMQTTClient", i)
+		assert.True(t, mockClient.IsConnected(), "Client %d should be connected", i)
+	}
+	manager.clientsMutex.Unlock()
+}
+
+func TestRunConnectionsWithError(t *testing.T) {
+	options, cancel := setupTest(t)
+	defer cancel()
+	
+	manager := NewConnectionManager(options, 1)
+	expectedErr := errors.New("connection failed")
+	manager.SetNewClientFunc(mockNewClientFuncWithError(expectedErr))
+
+	// Run connections
+	err := manager.RunConnections()
+	assert.NoError(t, err, "RunConnections should not return error even if clients fail to connect")
+
+	// Wait for a short time to allow all connection attempts to complete
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify that no clients were connected
+	manager.clientsMutex.Lock()
+	assert.Equal(t, 0, len(manager.activeClients), "Should have no active clients")
+	manager.clientsMutex.Unlock()
+}
+
+func TestRunConnectionsWithTimeout(t *testing.T) {
+	options, cancel := setupTest(t)
+	defer cancel()
+	
+	// Set a very short connection timeout
+	options.ConnectTimeout = 1
+	
+	manager := NewConnectionManager(options, 1)
+	manager.SetNewClientFunc(mockNewClientFuncWithDelay(2 * time.Second))
+
+	// Run connections
+	err := manager.RunConnections()
+	assert.NoError(t, err, "RunConnections should not return error on timeout")
+
+	// Wait for a short time to allow all connection attempts to complete
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify that no clients were connected
+	manager.clientsMutex.Lock()
+	assert.Equal(t, 0, len(manager.activeClients), "Should have no active clients")
+	manager.clientsMutex.Unlock()
+}
+
+func TestKeepConnections(t *testing.T) {
+	options, cancel := setupTest(t)
+	defer cancel()
+	
+	manager := NewConnectionManager(options, 1)
+	manager.SetNewClientFunc(mockNewClientFunc)
+
+	// Run connections first
+	err := manager.RunConnections()
+	assert.NoError(t, err, "RunConnections should not return error")
+
+	// Wait for a short time to allow all connections to be established
+	time.Sleep(100 * time.Millisecond)
+
+	// Test keep connections with timeout
+	done := make(chan struct{})
+	go func() {
+		err := manager.KeepConnections()
+		assert.NoError(t, err, "KeepConnections should not return error")
+		close(done)
+	}()
+
+	// Wait for keep connections to finish
+	select {
+	case <-done:
+		// Success
+	case <-time.After(2 * time.Second):
+		t.Fatal("KeepConnections did not finish within expected time")
+	}
+}
+
+func TestDisconnectAll(t *testing.T) {
+	options, cancel := setupTest(t)
+	defer cancel()
+	
+	manager := NewConnectionManager(options, 1)
+	manager.SetNewClientFunc(mockNewClientFunc)
+
+	// Run connections first
+	err := manager.RunConnections()
+	assert.NoError(t, err, "RunConnections should not return error")
+
+	// Wait for a short time to allow all connections to be established
+	time.Sleep(100 * time.Millisecond)
+
+	// Verify clients are connected
+	manager.clientsMutex.Lock()
+	assert.Equal(t, 2, len(manager.activeClients), "Should have 2 active clients")
+	manager.clientsMutex.Unlock()
+
+	// Disconnect all clients
+	err = manager.DisconnectAll()
+	assert.NoError(t, err, "DisconnectAll should not return error")
+
+	// Verify all clients are disconnected
+	manager.clientsMutex.Lock()
+	for i, client := range manager.activeClients {
+		mockClient, ok := client.(*mockMQTTClient)
+		assert.True(t, ok, "Client %d should be mockMQTTClient", i)
+		assert.False(t, mockClient.IsConnected(), "Client %d should be disconnected", i)
+		assert.True(t, mockClient.disconnected, "Client %d should have Disconnect() called", i)
+	}
+	manager.clientsMutex.Unlock()
 }
