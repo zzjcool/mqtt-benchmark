@@ -31,7 +31,6 @@ type ConnectionResult struct {
 
 // ConnectionManager handles MQTT connection operations
 type ConnectionManager struct {
-	newClientFunc NewClientFunc
 	optionsCtx    *OptionsCtx
 	log           *zap.Logger
 	activeClients []mqtt.Client
@@ -41,16 +40,18 @@ type ConnectionManager struct {
 
 // NewConnectionManager creates a new ConnectionManager
 func NewConnectionManager(options *OptionsCtx, keepTime int) *ConnectionManager {
+	if options.newClientFunc == nil {
+		options.newClientFunc = mqtt.NewClient
+	}
 	return &ConnectionManager{
-		optionsCtx:    options,
-		log:           logger.GetLogger(),
-		keepTime:      keepTime,
-		newClientFunc: mqtt.NewClient,
+		optionsCtx: options,
+		log:        logger.GetLogger(),
+		keepTime:   keepTime,
 	}
 }
 
 func (m *ConnectionManager) SetNewClientFunc(newClientFunc NewClientFunc) {
-	m.newClientFunc = newClientFunc
+	m.optionsCtx.newClientFunc = newClientFunc
 }
 
 // RunConnections establishes MQTT connections based on the configured options
@@ -204,7 +205,7 @@ func (m *ConnectionManager) RunConnections() error {
 			}
 
 			// Create and connect client
-			client := m.newClientFunc(opts)
+			client := m.optionsCtx.newClientFunc(opts)
 			startTime := time.Now()
 			token := client.Connect()
 			if token.WaitTimeout(time.Duration(m.optionsCtx.ConnectTimeout) * time.Second) {

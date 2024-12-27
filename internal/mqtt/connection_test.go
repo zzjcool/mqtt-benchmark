@@ -8,10 +8,10 @@ import (
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
-	"github.com/zzjcool/mqtt-benchmark/internal/logger"
-	"github.com/zzjcool/mqtt-benchmark/internal/metrics"
 	"github.com/prometheus/client_golang/prometheus"
 	"github.com/stretchr/testify/assert"
+	"github.com/zzjcool/mqtt-benchmark/internal/logger"
+	"github.com/zzjcool/mqtt-benchmark/internal/metrics"
 )
 
 // mockToken implements mqtt.Token interface for testing
@@ -167,16 +167,16 @@ func TestSetNewClientFunc(t *testing.T) {
 	manager := NewConnectionManager(options, 60)
 
 	// Test default newClientFunc
-	assert.NotNil(t, manager.newClientFunc, "Default newClientFunc should not be nil")
+	assert.NotNil(t, manager.optionsCtx.newClientFunc, "Default newClientFunc should not be nil")
 
 	// Set custom newClientFunc
 	manager.SetNewClientFunc(mockNewClientFunc)
 
 	// Verify the newClientFunc was changed
-	assert.NotNil(t, manager.newClientFunc, "Custom newClientFunc should not be nil")
+	assert.NotNil(t, manager.optionsCtx.newClientFunc, "Custom newClientFunc should not be nil")
 	
 	// Create a client using the mock function
-	client := manager.newClientFunc(mqtt.NewClientOptions())
+	client := manager.optionsCtx.newClientFunc(mqtt.NewClientOptions())
 	assert.NotNil(t, client, "Client created with mock function should not be nil")
 	
 	// Test the mock client behavior

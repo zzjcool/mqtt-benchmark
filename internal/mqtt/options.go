@@ -31,4 +31,6 @@ type OptionsCtx struct {
 
 	OnConnectAttempt func(broker *url.URL, tlsCfg *tls.Config) *tls.Config
 	OnConnect        func(client mqtt.Client, idx uint32)
+
+	newClientFunc NewClientFunc
 }
