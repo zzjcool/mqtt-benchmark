@@ -61,6 +61,7 @@ func (s *Subscriber) RunSubscribe() error {
 	if err := connManager.RunConnections(); err != nil {
 		return err
 	}
+
 	defer connManager.DisconnectAll()
 
 

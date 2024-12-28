@@ -75,7 +75,8 @@ func TestRunConnectionsWithError(t *testing.T) {
 
 	// Run connections
 	err := manager.RunConnections()
-	assert.NoError(t, err, "RunConnections should not return error even if clients fail to connect")
+	assert.Error(t, err, "RunConnections should return error on connection failure")
+
 
 	// Wait for a short time to allow all connection attempts to complete
 	time.Sleep(100 * time.Millisecond)
@@ -98,7 +99,7 @@ func TestRunConnectionsWithTimeout(t *testing.T) {
 
 	// Run connections
 	err := manager.RunConnections()
-	assert.NoError(t, err, "RunConnections should not return error on timeout")
+	assert.Error(t, err, "RunConnections should return error on timeout")
 
 	// Wait for a short time to allow all connection attempts to complete
 	time.Sleep(100 * time.Millisecond)

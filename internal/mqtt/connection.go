@@ -56,7 +56,7 @@ func (m *ConnectionManager) SetNewClientFunc(newClientFunc NewClientFunc) {
 func (m *ConnectionManager) RunConnections() error {
 	if m.optionsCtx.ClientNum == 0 {
 		m.log.Info("Skipping connection manager, no clients to connect")
-		return nil
+		return errors.New("no active clients")
 	}
 
 	// Create rate limiter for connection attempts
@@ -185,11 +185,11 @@ func (m *ConnectionManager) RunConnections() error {
 	// Wait for all goroutines to complete
 	wg.Wait()
 	if len(m.activeClients) == 0 {
-		m.log.Warn("No clients connected")
-		return nil
+		return errors.New("no active clients")
 	}
 	<-onceConnectedDone
 	close(progressDone)
+
 
 	m.log.Info("All clients connected",
 		zap.Int("total_clients", len(m.activeClients)))

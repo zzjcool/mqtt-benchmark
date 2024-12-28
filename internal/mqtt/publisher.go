@@ -262,9 +262,6 @@ func (p *Publisher) RunPublish() error {
 	if err := connManager.RunConnections(); err != nil {
 		return err
 	}
-	if len(connManager.activeClients) == 0 {
-		return errors.New("no active clients")
-	}
 	defer connManager.DisconnectAll()
 	p.wg.Wait()
 	return nil

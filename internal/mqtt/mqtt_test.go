@@ -117,6 +117,20 @@ func (m *mockMQTTClient) Publish(topic string, qos byte, retained bool, payload 
 	}
 }
 
+func (m *mockMQTTClient) Subscribe(topic string, qos byte, callback mqtt.MessageHandler) mqtt.Token {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+
+	if !m.connected {
+		return &mockToken{err: errors.New("client not connected")}
+	}
+
+	// Store the callback in the options for testing
+	m.opts.SetDefaultPublishHandler(callback)
+
+	return &mockToken{}
+}
+
 // mockNewClientFunc is a test implementation of NewClientFunc
 func mockNewClientFunc(opts *mqtt.ClientOptions) mqtt.Client {
 	return &mockMQTTClient{
@@ -175,6 +189,30 @@ func setupTest() (*OptionsCtx, context.CancelFunc) {
 		Name: "mqtt_new_connections",
 		Help: "Number of new MQTT connections",
 	}, []string{"broker"})
+	metrics.MQTTMessagesReceived = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "mqtt_messages_received",
+		Help: "Number of MQTT messages received",
+	})
+	metrics.MQTTMessageReceiveRate = prometheus.NewCounter(prometheus.CounterOpts{
+		Name: "mqtt_message_receive_rate",
+		Help: "Rate of MQTT messages received",
+	})
+	metrics.MQTTMessageQosDistribution = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "mqtt_message_qos_distribution",
+		Help: "Distribution of MQTT message QoS levels",
+	}, []string{"qos"})
+	metrics.MQTTMessagePayloadSize = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name: "mqtt_message_payload_size",
+		Help: "Size of MQTT message payloads",
+	})
+	metrics.MQTTMessageReceiveLatency = prometheus.NewHistogram(prometheus.HistogramOpts{
+		Name: "mqtt_message_receive_latency",
+		Help: "Latency of MQTT message reception",
+	})
+	metrics.MQTTSubscriptionErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
+		Name: "mqtt_subscription_errors",
+		Help: "Number of MQTT subscription errors",
+	}, []string{"topic", "type"})
 
 	reg.MustRegister(
 		metrics.MQTTConnectionRateLimit,
@@ -183,6 +221,12 @@ func setupTest() (*OptionsCtx, context.CancelFunc) {
 		metrics.MQTTConnectionErrors,
 		metrics.MQTTConnectionTime,
 		metrics.MQTTNewConnections,
+		metrics.MQTTMessagesReceived,
+		metrics.MQTTMessageReceiveRate,
+		metrics.MQTTMessageQosDistribution,
+		metrics.MQTTMessagePayloadSize,
+		metrics.MQTTMessageReceiveLatency,
+		metrics.MQTTSubscriptionErrors,
 	)
 
 	// Create context
@@ -197,7 +241,27 @@ func setupTest() (*OptionsCtx, context.CancelFunc) {
 		Servers:          []string{"tcp://localhost:1883"},
 		ConnectTimeout:   5,
 		KeepAliveSeconds: 60,
+		newClientFunc:    mockNewClientFunc,
 	}
 
 	return options, cancel
 }
+
+
+// mockMessage implements mqtt.Message interface for testing
+type mockMessage struct {
+	duplicate bool
+	qos       byte
+	retained  bool
+	topic     string
+	messageID uint16
+	payload   []byte
+}
+
+func (m *mockMessage) Duplicate() bool     { return m.duplicate }
+func (m *mockMessage) Qos() byte          { return m.qos }
+func (m *mockMessage) Retained() bool      { return m.retained }
+func (m *mockMessage) Topic() string       { return m.topic }
+func (m *mockMessage) MessageID() uint16   { return m.messageID }
+func (m *mockMessage) Payload() []byte     { return m.payload }
+func (m *mockMessage) Ack()               {}
