@@ -27,7 +27,7 @@ type Publisher struct {
 	withTimestamp  bool // Add timestamp to payload
 	retain         bool
 	waitForClients bool
-	inflight       int  // Maximum inflight messages for QoS 1 and 2
+	inflight       int  // Maximum inflight messages per client for QoS 1 and 2
 }
 
 // NewPublisher creates a new Publisher
@@ -171,6 +171,67 @@ func (p *Publisher) asyncPublish(client mqtt.Client, topicGen *TopicGenerator) c
 	return result
 }
 
+// handleClientConnect handles the client connection and starts the publishing process
+func (p *Publisher) handleClientConnect(client mqtt.Client, idx uint32) {
+	clientOptionsReader := client.OptionsReader()
+	clientID := clientOptionsReader.ClientID()
+	// Create a new TopicGenerator for each client with its own clientID
+	clientTopicGen := NewTopicGenerator(p.topicGenerator.TopicTemplate, p.topicGenerator.TopicNum, idx)
+	p.log.Debug("Publisher goroutine started",
+		zap.Uint32("client_id", idx))
+	limiter := rate.NewLimiter(rate.Limit(p.rate), 1)
+
+	inflightCh := make(chan struct{}, p.inflight)
+	if p.inflight > 0 {
+		// Initialize inflightCh with tokens
+		for i := 0; i < p.inflight; i++ {
+			inflightCh <- struct{}{}
+		}
+	}
+
+	for {
+		select {
+		case <-p.optionsCtx.Done():
+			p.log.Debug("Publisher goroutine cancelled", zap.String("client_id", clientID))
+			return
+		default:
+			// Wait for rate limiter
+			if err := limiter.Wait(p.optionsCtx); err != nil {
+				if errors.Is(err, p.optionsCtx.Err()) {
+					p.log.Debug("Publisher goroutine cancelled",
+						zap.String("client_id", clientID))
+					return
+				}
+				p.log.Error("Rate limiter error",
+					zap.Error(err),
+					zap.String("client_id", clientID))
+				return
+			}
+
+			// Check inflight limit if set
+			if p.inflight > 0 {
+				select {
+				case <-inflightCh:
+					// Got a token, proceed with publish
+				case <-p.optionsCtx.Done():
+					return
+				}
+			}
+
+			// Publish message
+			errCh := p.asyncPublish(client, clientTopicGen)
+
+			// Start a goroutine to handle the publish result
+			if p.inflight > 0 {
+				go func() {
+					<-errCh // Wait for publish to complete
+					inflightCh <- struct{}{} // Return the token
+				}()
+			}
+		}
+	}
+}
+
 // RunPublish starts the publishing process
 func (p *Publisher) RunPublish() error {
 	p.log.Info("Starting publish test",
@@ -183,65 +244,7 @@ func (p *Publisher) RunPublish() error {
 	// Create connection manager with auto reconnect enabled
 	p.optionsCtx.ConnectRetryInterval = 5 // 5 seconds retry interval
 
-	p.optionsCtx.OnConnect = func(client mqtt.Client, idx uint32) {
-		clientOptionsReader := client.OptionsReader()
-		clientID := clientOptionsReader.ClientID()
-		// Create a new TopicGenerator for each client with its own clientID
-		clientTopicGen := NewTopicGenerator(p.topicGenerator.TopicTemplate, p.topicGenerator.TopicNum, idx)
-		p.log.Debug("Publisher goroutine started",
-			zap.Uint32("client_id", idx))
-		limiter := rate.NewLimiter(rate.Limit(p.rate), 1)
-
-		inflightCh := make(chan struct{}, p.inflight)
-		if p.inflight > 0 {
-			// Initialize inflightCh with tokens
-			for i := 0; i < p.inflight; i++ {
-				inflightCh <- struct{}{}
-			}
-		}
-
-		for {
-			select {
-			case <-p.optionsCtx.Done():
-				p.log.Debug("Publisher goroutine cancelled", zap.String("client_id", clientID))
-				return
-			default:
-				// Wait for rate limiter
-				if err := limiter.Wait(p.optionsCtx); err != nil {
-					if errors.Is(err, p.optionsCtx.Err()) {
-						p.log.Debug("Publisher goroutine cancelled",
-							zap.String("client_id", clientID))
-						return
-					}
-					p.log.Error("Rate limiter error",
-						zap.Error(err),
-						zap.String("client_id", clientID))
-					return
-				}
-
-				// Check inflight limit if set
-				if p.inflight > 0 {
-					select {
-					case <-inflightCh:
-						// Got a token, proceed with publish
-					case <-p.optionsCtx.Done():
-						return
-					}
-				}
-
-				// Publish message
-				errCh := p.asyncPublish(client, clientTopicGen)
-
-				// Start a goroutine to handle the publish result
-				if p.inflight > 0 {
-					go func() {
-						<-errCh // Wait for publish to complete
-						inflightCh <- struct{}{} // Return the token
-					}()
-				}
-			}
-		}
-	}
+	p.optionsCtx.OnConnect = p.handleClientConnect
 
 	p.report()
 
@@ -265,8 +268,6 @@ func (p *Publisher) RunPublish() error {
 	<-p.optionsCtx.Done()
 
 	p.log.Info("Publish test completed")
-
-	// Disconnect all clients
 
 	return nil
 }

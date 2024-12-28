@@ -12,8 +12,6 @@ import (
 	"syscall"
 	"time"
 
-	"sync/atomic"
-
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/zzjcool/mqtt-benchmark/internal/logger"
 	"github.com/zzjcool/mqtt-benchmark/internal/metrics"
@@ -62,65 +60,12 @@ func (m *ConnectionManager) RunConnections() error {
 	// Create rate limiter for connection attempts
 	limiter := rate.NewLimiter(rate.Limit(m.optionsCtx.ConnRate), 1)
 
-	// Create MQTT clients
-	m.clientsMutex.Lock()
-	defer m.clientsMutex.Unlock()
-
 	var wg sync.WaitGroup
-	clientChan := make(chan mqtt.Client, m.optionsCtx.ClientNum)
 
-	go func() {
-		for {
-			select {
-			case client, ok := <-clientChan:
-				if !ok {
-					m.log.Debug("Client channel closed, stopping connection collection")
-					return
-				}
-				m.log.Debug("New client connected")
-				m.activeClients = append(m.activeClients, client)
-				wg.Done()
-			case <-m.optionsCtx.Done():
-				m.log.Debug("Connection collection goroutine cancelled")
-				return
-			}
-		}
-	}()
-
-	// Add progress tracking
-	var failedCount uint32
 	progressDone := make(chan struct{})
 
 	// Start progress reporting goroutine
-	go func() {
-		ticker := time.NewTicker(time.Second)
-		defer ticker.Stop()
-
-		var lastConnectedCount uint32
-		for {
-			select {
-			case <-m.optionsCtx.Done():
-				m.log.Debug("Connection progress goroutine cancelled")
-				return
-			case <-ticker.C:
-				connectedCount := uint32(metrics.GetGaugeVecValue(metrics.MQTTConnections, m.optionsCtx.Servers...))
-				remaining := m.optionsCtx.ClientNum - (connectedCount + failedCount)
-
-				// Calculate connection rate (connections per second)
-				connectionRate := connectedCount - lastConnectedCount
-				lastConnectedCount = connectedCount
-
-				m.log.Info("Connection progress",
-					zap.Uint32("connected", connectedCount),
-					zap.Uint32("failed", failedCount),
-					zap.Uint32("remaining", remaining),
-					zap.Uint32("conn_rate", connectionRate))
-			case <-progressDone:
-				m.log.Info("Connection progress done")
-				return
-			}
-		}
-	}()
+	m.report(progressDone)
 
 	for i := uint32(0); i < m.optionsCtx.ClientNum; i++ {
 		// Wait for rate limiter
@@ -135,7 +80,7 @@ func (m *ConnectionManager) RunConnections() error {
 
 		wg.Add(1)
 		go func(index uint32) {
-
+			defer wg.Done()
 			// Create unique client ID
 			clientID := fmt.Sprintf("%s-%d", m.optionsCtx.ClientPrefix, index)
 			serverIndex := index % uint32(len(m.optionsCtx.Servers))
@@ -166,7 +111,6 @@ func (m *ConnectionManager) RunConnections() error {
 				m.log.Debug("Client reconnecting",
 					zap.String("client_id", clientID),
 					zap.String("broker", serverAddr))
-				metrics.MQTTConnectionAttempts.WithLabelValues(serverAddr, "failure").Inc()
 			}
 
 			opts.OnConnectAttempt = func(broker *url.URL, tlsCfg *tls.Config) *tls.Config {
@@ -176,6 +120,7 @@ func (m *ConnectionManager) RunConnections() error {
 				if m.optionsCtx.OnConnectAttempt != nil {
 					return m.optionsCtx.OnConnectAttempt(broker, tlsCfg)
 				}
+				metrics.MQTTConnectionAttempts.WithLabelValues(serverAddr).Inc()
 				return tlsCfg
 			}
 
@@ -184,7 +129,6 @@ func (m *ConnectionManager) RunConnections() error {
 				m.log.Debug("Client connected",
 					zap.String("client_id", clientID),
 					zap.String("broker", serverAddr))
-				metrics.MQTTConnectionAttempts.WithLabelValues(serverAddr, "success").Inc()
 				metrics.MQTTConnections.WithLabelValues(serverAddr).Inc()
 				metrics.MQTTNewConnections.WithLabelValues(serverAddr).Inc()
 				if m.optionsCtx.WaitForClients {
@@ -200,7 +144,7 @@ func (m *ConnectionManager) RunConnections() error {
 				m.log.Debug("Client connection lost",
 					zap.String("client_id", clientID),
 					zap.Error(err))
-				metrics.MQTTConnectionErrors.WithLabelValues(serverAddr, "connection_lost").Inc()
+				metrics.MQTTConnectionErrors.WithLabelValues(serverAddr, metrics.MQTTConnectionLostErrors).Inc()
 				metrics.MQTTConnections.WithLabelValues(serverAddr).Dec()
 			}
 
@@ -213,17 +157,18 @@ func (m *ConnectionManager) RunConnections() error {
 					m.log.Error("Failed to connect",
 						zap.String("client_id", clientID),
 						zap.Error(token.Error()))
-					metrics.MQTTConnectionAttempts.WithLabelValues(serverAddr, "failure").Inc()
-					atomic.AddUint32(&failedCount, 1)
+					metrics.MQTTConnectionErrors.WithLabelValues(serverAddr, metrics.MQTTConnectionNetworkErrors).Inc()
 					return
 				}
 				metrics.MQTTConnectionTime.Observe(time.Since(startTime).Seconds())
-				clientChan <- client
+				m.clientsMutex.Lock()
+				m.activeClients = append(m.activeClients, client)
+				m.clientsMutex.Unlock()
 			} else {
 				m.log.Error("Connection timeout",
 					zap.String("client_id", clientID))
-				metrics.MQTTConnectionAttempts.WithLabelValues(serverAddr, "failure").Inc()
-				atomic.AddUint32(&failedCount, 1)
+				metrics.MQTTConnectionErrors.WithLabelValues(serverAddr, metrics.MQTTConnectionTimeoutErrors).Inc()
+
 				return
 			}
 		}(i)
@@ -231,12 +176,43 @@ func (m *ConnectionManager) RunConnections() error {
 
 	// Wait for all goroutines to complete
 	wg.Wait()
-	close(clientChan)
 	close(progressDone)
 
 	m.log.Info("All clients connected",
 		zap.Int("total_clients", len(m.activeClients)))
 	return nil
+}
+
+// report starts a goroutine to report connection progress
+func (m *ConnectionManager) report(progressDone chan struct{}) {
+	go func() {
+		ticker := time.NewTicker(time.Second)
+		defer ticker.Stop()
+
+		var lastConnectedCount uint32
+		for {
+			select {
+			case <-m.optionsCtx.Done():
+				m.log.Debug("Connection progress goroutine cancelled")
+				return
+			case <-ticker.C:
+				connectedCount := uint32(metrics.GetGaugeVecValue(metrics.MQTTConnections, m.optionsCtx.Servers...))
+				remaining := m.optionsCtx.ClientNum - connectedCount
+
+				// Calculate connection rate (connections per second)
+				connectionRate := connectedCount - lastConnectedCount
+				lastConnectedCount = connectedCount
+
+				m.log.Info("Connection progress",
+					zap.Uint32("connected", connectedCount),
+					zap.Uint32("remaining", remaining),
+					zap.Uint32("conn_rate", connectionRate))
+			case <-progressDone:
+				m.log.Info("Connection progress done")
+				return
+			}
+		}
+	}()
 }
 
 // KeepConnections maintains the connections for the specified duration

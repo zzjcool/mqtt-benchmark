@@ -28,7 +28,6 @@ QoS level and topic filters.`,
 		topicNum, _ := cmd.Flags().GetInt(FlagTopicNum)
 		qos, _ := cmd.Flags().GetInt(FlagQoS)
 		timeout, _ := cmd.Flags().GetInt(FlagTimeout)
-		keepTime, _ := cmd.Flags().GetInt("keep-time")
 		parseTimestamp, _ := cmd.Flags().GetBool(FlagParseTimestamp)
 
 		// Validate topic template if topic-num is set
@@ -51,15 +50,6 @@ QoS level and topic filters.`,
 		if err := subscriber.RunSubscribe(); err != nil {
 			log.Error("Failed to run subscription", zap.Error(err))
 			os.Exit(1)
-		}
-
-		// Keep connections if specified
-		if keepTime != 0 {
-			connManager := internalmqtt.NewConnectionManager(options, keepTime)
-			if err := connManager.KeepConnections(); err != nil {
-				log.Error("Failed to keep connections", zap.Error(err))
-				os.Exit(1)
-			}
 		}
 	},
 }

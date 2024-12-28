@@ -9,6 +9,13 @@ import (
 )
 
 var (
+	MQTTConnectionTimeoutErrors = "connection_timeout"
+	MQTTConnectionAuthFailedErrors = "auth_failed"
+	MQTTConnectionNetworkErrors = "network"
+	MQTTConnectionLostErrors = "lost"
+)
+
+var (
 	// Connection metrics
 	MQTTConnections = promauto.NewGaugeVec(prometheus.GaugeOpts{
 		Name: "mqtt_benchmark_active_connections",
@@ -18,12 +25,12 @@ var (
 	MQTTConnectionAttempts = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "mqtt_benchmark_connection_attempts_total",
 		Help: "The total number of MQTT connection attempts",
-	}, []string{"broker", "result"}) // result can be "success" or "failure"
+	}, []string{"broker"}) // result can be "success" or "failure"
 
 	MQTTConnectionErrors = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "mqtt_benchmark_connection_errors_total",
 		Help: "The total number of MQTT connection errors",
-	}, []string{"broker", "error_type"}) // error_type can be "timeout", "auth_failed", "network", etc.
+	}, []string{"broker", "error_type"}) // MQTTConnectionTimeoutErrors, MQTTConnectionAuthFailedErrors, MQTTConnectionNetworkErrors, MQTTConnectionLostErrors
 
 	// Connection timing metrics
 	MQTTConnectionTime = promauto.NewHistogram(prometheus.HistogramOpts{

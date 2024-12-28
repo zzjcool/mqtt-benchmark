@@ -217,6 +217,9 @@ func TestRunConnectionsWithError(t *testing.T) {
 	options, cancel := setupTest(t)
 	defer cancel()
 	
+	// Set a short connection timeout
+	options.ConnectTimeout = 1 // 1 second timeout
+	
 	manager := NewConnectionManager(options, 1)
 	expectedErr := errors.New("connection failed")
 	manager.SetNewClientFunc(mockNewClientFuncWithError(expectedErr))
