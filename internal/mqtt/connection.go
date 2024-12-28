@@ -54,8 +54,10 @@ func (m *ConnectionManager) SetNewClientFunc(newClientFunc NewClientFunc) {
 
 // RunConnections establishes MQTT connections based on the configured options
 func (m *ConnectionManager) RunConnections() error {
-	// 设置连接速率限制指标
-	metrics.MQTTConnectionRateLimit.Set(float64(m.optionsCtx.ConnRate))
+	if m.optionsCtx.ClientNum == 0 {
+		m.log.Info("Skipping connection manager, no clients to connect")
+		return nil
+	}
 
 	// Create rate limiter for connection attempts
 	limiter := rate.NewLimiter(rate.Limit(m.optionsCtx.ConnRate), 1)
@@ -66,6 +68,9 @@ func (m *ConnectionManager) RunConnections() error {
 
 	// Start progress reporting goroutine
 	m.report(progressDone)
+
+	onceConnected := sync.Once{}
+	onceConnectedDone := make(chan bool)
 
 	for i := uint32(0); i < m.optionsCtx.ClientNum; i++ {
 		// Wait for rate limiter
@@ -134,6 +139,9 @@ func (m *ConnectionManager) RunConnections() error {
 				if m.optionsCtx.WaitForClients {
 					<-progressDone
 				}
+				onceConnected.Do(func() {
+					close(onceConnectedDone) 
+				})
 				if m.optionsCtx.OnConnect != nil {
 					m.optionsCtx.OnConnect(c, index)
 				}
@@ -141,7 +149,7 @@ func (m *ConnectionManager) RunConnections() error {
 
 			// Set connection lost handler
 			opts.OnConnectionLost = func(c mqtt.Client, err error) {
-				m.log.Debug("Client connection lost",
+				m.log.Error("Client connection lost",
 					zap.String("client_id", clientID),
 					zap.Error(err))
 				metrics.MQTTConnectionErrors.WithLabelValues(serverAddr, metrics.MQTTConnectionLostErrors).Inc()
@@ -176,6 +184,11 @@ func (m *ConnectionManager) RunConnections() error {
 
 	// Wait for all goroutines to complete
 	wg.Wait()
+	if len(m.activeClients) == 0 {
+		m.log.Warn("No clients connected")
+		return nil
+	}
+	<-onceConnectedDone
 	close(progressDone)
 
 	m.log.Info("All clients connected",
@@ -185,6 +198,7 @@ func (m *ConnectionManager) RunConnections() error {
 
 // report starts a goroutine to report connection progress
 func (m *ConnectionManager) report(progressDone chan struct{}) {
+	metrics.MQTTConnectionRateLimit.Set(float64(m.optionsCtx.ConnRate))
 	go func() {
 		ticker := time.NewTicker(time.Second)
 		defer ticker.Stop()

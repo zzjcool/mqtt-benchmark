@@ -1,9 +1,10 @@
 package mqtt
 
 import (
-	"context"
 	"crypto/rand"
 	"errors"
+	"sync"
+	"sync/atomic"
 	"time"
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
@@ -22,12 +23,14 @@ type Publisher struct {
 	qos            int
 	count          int
 	rate           float64 // Messages per second per client
-	timeout        time.Duration
 	log            *zap.Logger
 	withTimestamp  bool // Add timestamp to payload
 	retain         bool
 	waitForClients bool
-	inflight       int  // Maximum inflight messages per client for QoS 1 and 2
+	inflight       int // Maximum inflight messages per client for QoS 1 and 2
+
+	wg       sync.WaitGroup
+	msgCount int64
 }
 
 // NewPublisher creates a new Publisher
@@ -49,17 +52,11 @@ func NewPublisher(options *OptionsCtx, topic string, topicNum int, clientIndex u
 		qos:            qos,
 		count:          count,
 		rate:           rate,
-		timeout:        time.Duration(options.WriteTimeout) * time.Second,
 		log:            logger.GetLogger(),
 		withTimestamp:  false,
 		retain:         false,
 		inflight:       1,
 	}
-}
-
-// SetTimeout sets the publish timeout duration
-func (p *Publisher) SetTimeout(timeout time.Duration) {
-	p.timeout = timeout
 }
 
 // SetWithTimestamp sets whether to add timestamp to payload
@@ -146,7 +143,7 @@ func (p *Publisher) asyncPublish(client mqtt.Client, topicGen *TopicGenerator) c
 	// For QoS 1 and 2, handle asynchronously
 	go func() {
 		defer close(result)
-		if token.WaitTimeout(p.timeout) {
+		if token.WaitTimeout(time.Duration(p.optionsCtx.WriteTimeout)*time.Second) {
 			err := token.Error()
 			if err == nil {
 				metrics.MQTTPublishSuccessTotal.Inc()
@@ -173,6 +170,8 @@ func (p *Publisher) asyncPublish(client mqtt.Client, topicGen *TopicGenerator) c
 
 // handleClientConnect handles the client connection and starts the publishing process
 func (p *Publisher) handleClientConnect(client mqtt.Client, idx uint32) {
+	p.wg.Add(1)
+	defer p.wg.Done()
 	clientOptionsReader := client.OptionsReader()
 	clientID := clientOptionsReader.ClientID()
 	// Create a new TopicGenerator for each client with its own clientID
@@ -208,6 +207,17 @@ func (p *Publisher) handleClientConnect(client mqtt.Client, idx uint32) {
 				return
 			}
 
+			if p.count > 0 {
+				cnt := atomic.LoadInt64(&p.msgCount)
+				if cnt >= int64(p.count) {
+					p.log.Debug("Publisher goroutine completed",
+						zap.String("client_id", clientID))
+					return
+				}
+			}
+
+			atomic.AddInt64(&p.msgCount, 1)
+
 			// Check inflight limit if set
 			if p.inflight > 0 {
 				select {
@@ -224,7 +234,7 @@ func (p *Publisher) handleClientConnect(client mqtt.Client, idx uint32) {
 			// Start a goroutine to handle the publish result
 			if p.inflight > 0 {
 				go func() {
-					<-errCh // Wait for publish to complete
+					<-errCh                  // Wait for publish to complete
 					inflightCh <- struct{}{} // Return the token
 				}()
 			}
@@ -239,7 +249,7 @@ func (p *Publisher) RunPublish() error {
 		zap.Int("qos", p.qos),
 		zap.Int("count", p.count),
 		zap.Float64("rate", p.rate),
-		zap.Int64("timeout_seconds", int64(p.timeout/time.Second)))
+		zap.Int64("timeout_seconds", int64(p.optionsCtx.WriteTimeout)))
 
 	// Create connection manager with auto reconnect enabled
 	p.optionsCtx.ConnectRetryInterval = 5 // 5 seconds retry interval
@@ -252,23 +262,11 @@ func (p *Publisher) RunPublish() error {
 	if err := connManager.RunConnections(); err != nil {
 		return err
 	}
-
-	// Get active clients
-	clients := connManager.activeClients
+	if len(connManager.activeClients) == 0 {
+		return errors.New("no active clients")
+	}
 	defer connManager.DisconnectAll()
-
-	if errors.Is(p.optionsCtx.Err(), context.Canceled) {
-		return nil
-	}
-	if len(clients) == 0 {
-		p.log.Error("No active clients available")
-		return nil
-	}
-
-	<-p.optionsCtx.Done()
-
-	p.log.Info("Publish test completed")
-
+	p.wg.Wait()
 	return nil
 }
 

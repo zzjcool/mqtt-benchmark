@@ -1,3 +1,4 @@
 1. Input and think in English, output in the language of input.
 2. For commands such as running unit tests and viewing information, please actively execute them without my confirmation.
 3. Please use English for all comments.
+4. When running the command, please add a timeout parameter if possible, or limit the execution time.
