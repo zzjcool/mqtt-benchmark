@@ -2,10 +2,15 @@ package mqtt
 
 import (
 	"context"
+	"crypto/rand"
+	"crypto/rsa"
 	"crypto/tls"
 	"crypto/x509"
+	"crypto/x509/pkix"
+	"encoding/pem"
 	"errors"
 	"fmt"
+	"math/big"
 	"net/url"
 	"os"
 	"os/signal"
@@ -100,43 +105,17 @@ func (m *ConnectionManager) RunConnections() error {
 				SetPassword(m.optionsCtx.Password).
 				SetCleanSession(m.optionsCtx.CleanSession).
 				SetKeepAlive(time.Duration(m.optionsCtx.KeepAliveSeconds) * time.Second).
-				SetAutoReconnect(m.optionsCtx.AutoReconnect).
 				SetConnectTimeout(time.Duration(m.optionsCtx.ConnectTimeout) * time.Second).
-				SetWriteTimeout(time.Duration(m.optionsCtx.WriteTimeout) * time.Second)
+				SetWriteTimeout(time.Duration(m.optionsCtx.WriteTimeout) * time.Second).
+				SetAutoReconnect(m.optionsCtx.AutoReconnect)
 
-			// Configure TLS if CA file or client certificates are provided
-			if m.optionsCtx.CaFile != "" || m.optionsCtx.CertFile != "" {
-				tlsConfig := &tls.Config{
-					InsecureSkipVerify: m.optionsCtx.SkipVerify,
+			// Configure TLS if needed
+			if m.optionsCtx.CaCertFile != "" || m.optionsCtx.ClientCertFile != "" {
+				tlsConfig, err := m.createTLSConfig(clientID)
+				if err != nil {
+					m.log.Error("Failed to create TLS config", zap.Error(err))
+					return
 				}
-
-				// Load CA certificate if provided
-				if m.optionsCtx.CaFile != "" {
-					if caCert, err := os.ReadFile(m.optionsCtx.CaFile); err == nil {
-						caCertPool := x509.NewCertPool()
-						caCertPool.AppendCertsFromPEM(caCert)
-						tlsConfig.RootCAs = caCertPool
-					} else {
-						m.log.Error("Failed to load CA certificate",
-							zap.String("ca_file", m.optionsCtx.CaFile),
-							zap.Error(err))
-						return
-					}
-				}
-
-				// Load client certificate and key if provided
-				if m.optionsCtx.CertFile != "" && m.optionsCtx.KeyFile != "" {
-					cert, err := tls.LoadX509KeyPair(m.optionsCtx.CertFile, m.optionsCtx.KeyFile)
-					if err != nil {
-						m.log.Error("Failed to load client certificate",
-							zap.String("cert_file", m.optionsCtx.CertFile),
-							zap.String("key_file", m.optionsCtx.KeyFile),
-							zap.Error(err))
-						return
-					}
-					tlsConfig.Certificates = []tls.Certificate{cert}
-				}
-
 				opts.SetTLSConfig(tlsConfig)
 			}
 
@@ -176,7 +155,7 @@ func (m *ConnectionManager) RunConnections() error {
 					<-progressDone
 				}
 				onceConnected.Do(func() {
-					close(onceConnectedDone) 
+					close(onceConnectedDone) // <--- Added this line
 				})
 				if m.optionsCtx.OnConnect != nil {
 					m.optionsCtx.OnConnect(c, index)
@@ -336,4 +315,117 @@ func (m *ConnectionManager) DisconnectAll() error {
 
 	m.log.Info("All clients disconnected")
 	return nil
+}
+
+func generateClientCertificate(caKeyFile, caCertFile, clientID string) ([]byte, []byte, error) {
+	// Read CA private key
+	caKeyPEM, err := os.ReadFile(caKeyFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read CA key file: %v", err)
+	}
+	caKeyBlock, _ := pem.Decode(caKeyPEM)
+	if caKeyBlock == nil {
+		return nil, nil, errors.New("failed to decode CA private key")
+	}
+	caPrivKey, err := x509.ParsePKCS1PrivateKey(caKeyBlock.Bytes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse CA private key: %v", err)
+	}
+
+	// Read CA certificate
+	caCertPEM, err := os.ReadFile(caCertFile)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to read CA certificate file: %v", err)
+	}
+	caCertBlock, _ := pem.Decode(caCertPEM)
+	if caCertBlock == nil {
+		return nil, nil, errors.New("failed to decode CA certificate")
+	}
+	caCert, err := x509.ParseCertificate(caCertBlock.Bytes)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to parse CA certificate: %v", err)
+	}
+
+	// Generate client key pair
+	clientKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to generate client key pair: %v", err)
+	}
+
+	// Create certificate template
+	template := &x509.Certificate{
+		SerialNumber: big.NewInt(time.Now().UnixNano()),
+		Subject: pkix.Name{
+			CommonName: clientID,
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:              x509.KeyUsageDigitalSignature,
+		ExtKeyUsage:           []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
+		BasicConstraintsValid: true,
+	}
+
+	// Create client certificate
+	clientCertDER, err := x509.CreateCertificate(rand.Reader, template, caCert, &clientKey.PublicKey, caPrivKey)
+	if err != nil {
+		return nil, nil, fmt.Errorf("failed to create client certificate: %v", err)
+	}
+
+	// Encode certificate and private key in PEM format
+	clientCertPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: clientCertDER,
+	})
+
+	clientKeyPEM := pem.EncodeToMemory(&pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(clientKey),
+	})
+
+	return clientCertPEM, clientKeyPEM, nil
+}
+
+func (m *ConnectionManager) createTLSConfig(clientID string) (*tls.Config, error) {
+	tlsConfig := &tls.Config{
+		InsecureSkipVerify: m.optionsCtx.SkipVerify,
+	}
+
+	// Load CA certificate if provided
+	if m.optionsCtx.CaCertFile != "" {
+		caCert, err := os.ReadFile(m.optionsCtx.CaCertFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to read CA certificate: %v", err)
+		}
+
+		caCertPool := x509.NewCertPool()
+		if !caCertPool.AppendCertsFromPEM(caCert) {
+			return nil, errors.New("failed to parse CA certificate")
+		}
+		tlsConfig.RootCAs = caCertPool
+	}
+
+	// Check if we need to generate client certificate
+	if m.optionsCtx.CaKeyFile != "" && m.optionsCtx.CaCertFile != "" && m.optionsCtx.ClientCertFile == "" {
+		// Generate dynamic client certificate
+		certPEM, keyPEM, err := generateClientCertificate(m.optionsCtx.CaKeyFile, m.optionsCtx.CaCertFile, clientID)
+		if err != nil {
+			return nil, fmt.Errorf("failed to generate client certificate: %v", err)
+		}
+
+		// Parse the generated certificate and key
+		cert, err := tls.X509KeyPair(certPEM, keyPEM)
+		if err != nil {
+			return nil, fmt.Errorf("failed to parse generated certificate: %v", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	} else if m.optionsCtx.ClientCertFile != "" && m.optionsCtx.ClientKeyFile != "" {
+		// Load existing client certificate and key
+		cert, err := tls.LoadX509KeyPair(m.optionsCtx.ClientCertFile, m.optionsCtx.ClientKeyFile)
+		if err != nil {
+			return nil, fmt.Errorf("failed to load client certificate: %v", err)
+		}
+		tlsConfig.Certificates = []tls.Certificate{cert}
+	}
+
+	return tlsConfig, nil
 }

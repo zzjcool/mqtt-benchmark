@@ -21,25 +21,26 @@ import (
 )
 
 const (
-	FlagServers          = "servers"
-	FlagUser             = "user"
-	FlagPassword         = "pass"
-	FlagClientNum        = "clientNum"
-	FlagLogLevel         = "log-level"
-	FlagCleanSession     = "clean"
-	FlagKeepAlive        = "keepalive"
-	FlagRetryConnect     = "num-retry-connect"
-	FlagConnRate         = "connrate"
-	FlagMetricsPort      = "metrics-port"
-	FlagPprofPort        = "pprof-port"
-	FlagClientPrefix     = "client-prefix"
-	FlagConnectTimeout   = "connect-timeout"
-	FlagInflight         = "inflight"
-	FlagWriteTimeout     = "write-timeout"
-	FlagCaFile           = "ca-file"
-	FlagCertFile         = "cert-file"
-	FlagKeyFile          = "key-file"
-	FlagSkipVerify       = "skip-verify"
+	FlagServers        = "servers"
+	FlagUser           = "user"
+	FlagPassword       = "pass"
+	FlagClientNum      = "clientNum"
+	FlagLogLevel       = "log-level"
+	FlagCleanSession   = "clean"
+	FlagKeepAlive      = "keepalive"
+	FlagRetryConnect   = "num-retry-connect"
+	FlagConnRate       = "connrate"
+	FlagMetricsPort    = "metrics-port"
+	FlagPprofPort      = "pprof-port"
+	FlagClientPrefix   = "client-prefix"
+	FlagConnectTimeout = "connect-timeout"
+	FlagInflight       = "inflight"
+	FlagWriteTimeout   = "write-timeout"
+	FlagCaCertFile     = "ca-cert-file"
+	FlagCaKeyFile      = "ca-key-file"
+	FlagClientCertFile = "client-cert-file"
+	FlagClientKeyFile  = "client-key-file"
+	FlagSkipVerify     = "skip-verify"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -129,9 +130,10 @@ func init() {
 	rootCmd.PersistentFlags().Int(FlagWriteTimeout, 5, "Write timeout in seconds")
 
 	// Add TLS configuration flags
-	rootCmd.PersistentFlags().String(FlagCaFile, "", "Path to CA certificate file")
-	rootCmd.PersistentFlags().String(FlagCertFile, "", "Path to client certificate file")
-	rootCmd.PersistentFlags().String(FlagKeyFile, "", "Path to client key file")
+	rootCmd.PersistentFlags().String(FlagCaCertFile, "", "Path to CA certificate file")
+	rootCmd.PersistentFlags().String(FlagCaKeyFile, "", "Path to CA private key file for dynamic certificate generation")
+	rootCmd.PersistentFlags().String(FlagClientCertFile, "", "Path to client certificate file")
+	rootCmd.PersistentFlags().String(FlagClientKeyFile, "", "Path to client key file")
 	rootCmd.PersistentFlags().Bool(FlagSkipVerify, false, "Skip server certificate verification")
 
 	// Add metrics flag
@@ -159,32 +161,34 @@ func fillMqttOptions(cmd *cobra.Command) *mqtt.OptionsCtx {
 	inflight, _ := cmd.Flags().GetInt(FlagInflight)
 
 	// Get TLS configuration flags
-	caFile, _ := cmd.Flags().GetString(FlagCaFile)
-	certFile, _ := cmd.Flags().GetString(FlagCertFile)
-	keyFile, _ := cmd.Flags().GetString(FlagKeyFile)
+	caCertFile, _ := cmd.Flags().GetString(FlagCaCertFile)
+	caKeyFile, _ := cmd.Flags().GetString(FlagCaKeyFile)
+	clientCertFile, _ := cmd.Flags().GetString(FlagClientCertFile)
+	clientKeyFile, _ := cmd.Flags().GetString(FlagClientKeyFile)
 	skipVerify, _ := cmd.Flags().GetBool(FlagSkipVerify)
 
 	return &mqtt.OptionsCtx{
-		Context:     ctx,
-		CancelFunc:  cancel,
-		Servers:     servers,
-		User:        user,
-		Password:    password,
-		ClientNum:   clientNum,
+		Context:      ctx,
+		CancelFunc:   cancel,
+		Servers:      servers,
+		User:         user,
+		Password:     password,
+		ClientNum:    clientNum,
 		ClientPrefix: clientPrefix,
-		ConnRate:    connRate,
+		ConnRate:     connRate,
 
-		AutoReconnect:        true,
-		CleanSession:         cleanSession,
-		KeepAliveSeconds:     keepAlive,
-		ConnectTimeout:       connectTimeout,
-		WriteTimeout:         writeTimeout,
-		Inflight:            inflight,
+		AutoReconnect:    true,
+		CleanSession:     cleanSession,
+		KeepAliveSeconds: keepAlive,
+		ConnectTimeout:   connectTimeout,
+		WriteTimeout:     writeTimeout,
+		Inflight:         inflight,
 
 		// TLS Configuration
-		CaFile:     caFile,
-		CertFile:   certFile,
-		KeyFile:    keyFile,
-		SkipVerify: skipVerify,
+		CaCertFile:     caCertFile,
+		CaKeyFile:      caKeyFile,
+		ClientCertFile: clientCertFile,
+		ClientKeyFile:  clientKeyFile,
+		SkipVerify:     skipVerify,
 	}
 }

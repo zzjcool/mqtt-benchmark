@@ -1,3 +1,5 @@
+when code modifications are needed:
+0. Adhere to the development guidelines in CONTRIBUTING.md. If you identify areas for improvement in the guidelines during development, please update the document accordingly.
 1. Input and think in English, output in the language of input.
 2. For commands such as running unit tests and viewing information, please actively execute them without my confirmation.
 3. Please use English for all comments.

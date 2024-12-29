@@ -15,7 +15,6 @@ import (
 
 	mqtt "github.com/eclipse/paho.mqtt.golang"
 	"github.com/stretchr/testify/assert"
-	"github.com/stretchr/testify/require"
 )
 
 // generateTestCertificates 生成用于测试的 TLS 证书
@@ -25,7 +24,7 @@ func generateTestCertificates(t *testing.T) (certFile, keyFile, caFile string, c
 
 	// 生成 CA 私钥
 	caPrivKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	// 创建 CA 证书模板
 	caTemplate := &x509.Certificate{
@@ -42,19 +41,19 @@ func generateTestCertificates(t *testing.T) (certFile, keyFile, caFile string, c
 
 	// 创建 CA 证书
 	caBytes, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caPrivKey.PublicKey, caPrivKey)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	// 保存 CA 证书
 	caFile = filepath.Join(tempDir, "ca.pem")
 	caOut, err := os.Create(caFile)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	err = pem.Encode(caOut, &pem.Block{Type: "CERTIFICATE", Bytes: caBytes})
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	caOut.Close()
 
 	// 生成客户端私钥
 	clientPrivKey, err := rsa.GenerateKey(rand.Reader, 2048)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	// 创建客户端证书模板
 	clientTemplate := &x509.Certificate{
@@ -71,22 +70,22 @@ func generateTestCertificates(t *testing.T) (certFile, keyFile, caFile string, c
 
 	// 创建客户端证书
 	clientBytes, err := x509.CreateCertificate(rand.Reader, clientTemplate, caTemplate, &clientPrivKey.PublicKey, caPrivKey)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 
 	// 保存客户端证书
 	certFile = filepath.Join(tempDir, "client-cert.pem")
 	certOut, err := os.Create(certFile)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	err = pem.Encode(certOut, &pem.Block{Type: "CERTIFICATE", Bytes: clientBytes})
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	certOut.Close()
 
 	// 保存客户端私钥
 	keyFile = filepath.Join(tempDir, "client-key.pem")
 	keyOut, err := os.Create(keyFile)
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	err = pem.Encode(keyOut, &pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(clientPrivKey)})
-	require.NoError(t, err)
+	assert.NoError(t, err)
 	keyOut.Close()
 
 	cleanup = func() {
@@ -271,9 +270,9 @@ func TestTLSConnection(t *testing.T) {
 	defer cleanup()
 
 	// 设置 TLS 配置
-	options.CertFile = certFile
-	options.KeyFile = keyFile
-	options.CaFile = caFile
+	options.ClientCertFile = certFile
+	options.ClientKeyFile = keyFile
+	options.CaCertFile = caFile
 	options.Servers = []string{"tls://localhost:8883"}
 
 	manager := NewConnectionManager(options, 1)
@@ -300,9 +299,9 @@ func TestInvalidTLSCertificates(t *testing.T) {
 
 	// 使用临时目录中的无效证书路径
 	tempDir := t.TempDir()
-	options.CertFile = filepath.Join(tempDir, "non-existent-cert.pem")
-	options.KeyFile = filepath.Join(tempDir, "non-existent-key.pem")
-	options.CaFile = filepath.Join(tempDir, "non-existent-ca.pem")
+	options.ClientCertFile = filepath.Join(tempDir, "non-existent-cert.pem")
+	options.ClientKeyFile = filepath.Join(tempDir, "non-existent-key.pem")
+	options.CaCertFile = filepath.Join(tempDir, "non-existent-ca.pem")
 	options.Servers = []string{"tls://localhost:8883"}
 
 	manager := NewConnectionManager(options, 1)
@@ -337,4 +336,122 @@ func TestInsecureSkipVerifyTLS(t *testing.T) {
 		assert.True(t, mockClient.IsConnected(), "Client %d with skip verify should be connected", i)
 	}
 	manager.clientsMutex.Unlock()
+}
+
+func TestGenerateClientCertificate(t *testing.T) {
+	// Create a temporary directory for test certificates
+	tempDir := t.TempDir()
+
+	// Create test CA key and certificate files
+	caKeyFile := tempDir + "/ca.key"
+	caCertFile := tempDir + "/ca.pem"
+
+	// Generate test CA key and certificate
+	err := generateTestCACertificate(caKeyFile, caCertFile)
+	assert.NoError(t, err, "Failed to generate test CA certificate")
+
+	// Test certificate generation
+	clientID := "test-client-1"
+	certPEM, keyPEM, err := generateClientCertificate(caKeyFile, caCertFile, clientID)
+	assert.NoError(t, err, "Failed to generate client certificate")
+	assert.NotNil(t, certPEM, "Certificate PEM should not be nil")
+	assert.NotNil(t, keyPEM, "Key PEM should not be nil")
+
+	// Write the generated certificates to files for verification
+	clientKeyFile := tempDir + "/client.key"
+	clientCertFile := tempDir + "/client.pem"
+	err = os.WriteFile(clientKeyFile, keyPEM, 0600)
+	assert.NoError(t, err, "Failed to write client key")
+	err = os.WriteFile(clientCertFile, certPEM, 0600)
+	assert.NoError(t, err, "Failed to write client certificate")
+
+	// Verify the generated files exist and are valid certificates
+	_, err = os.Stat(clientKeyFile)
+	assert.NoError(t, err, "Client key file should exist")
+	_, err = os.Stat(clientCertFile)
+	assert.NoError(t, err, "Client certificate file should exist")
+
+	// Test error cases
+	tests := []struct {
+		name     string
+		caKey    string
+		caCert   string
+		clientID string
+	}{
+		{
+			name:     "Invalid CA key file",
+			caKey:    "nonexistent.key",
+			caCert:   caCertFile,
+			clientID: "test-client",
+		},
+		{
+			name:     "Invalid CA cert file",
+			caKey:    caKeyFile,
+			caCert:   "nonexistent.pem",
+			clientID: "test-client",
+		},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			certPEM, keyPEM, err := generateClientCertificate(tt.caKey, tt.caCert, tt.clientID)
+			assert.Error(t, err, "Should fail with invalid files")
+			assert.Nil(t, certPEM, "Certificate PEM should be nil")
+			assert.Nil(t, keyPEM, "Key PEM should be nil")
+		})
+	}
+}
+
+func generateTestCACertificate(caKeyFile, caCertFile string) error {
+	// Generate CA private key
+	caPrivKey, err := rsa.GenerateKey(rand.Reader, 2048)
+	if err != nil {
+		return err
+	}
+
+	// Create CA certificate template
+	caTemplate := x509.Certificate{
+		SerialNumber: big.NewInt(1),
+		Subject: pkix.Name{
+			CommonName: "Test CA",
+		},
+		NotBefore:             time.Now(),
+		NotAfter:              time.Now().Add(24 * time.Hour),
+		KeyUsage:             x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		BasicConstraintsValid: true,
+		IsCA:                 true,
+	}
+
+	// Create CA certificate
+	caCertDER, err := x509.CreateCertificate(rand.Reader, &caTemplate, &caTemplate, &caPrivKey.PublicKey, caPrivKey)
+	if err != nil {
+		return err
+	}
+
+	// Save CA private key
+	caKeyFileHandle, err := os.Create(caKeyFile)
+	if err != nil {
+		return err
+	}
+	defer caKeyFileHandle.Close()
+
+	err = pem.Encode(caKeyFileHandle, &pem.Block{
+		Type:  "RSA PRIVATE KEY",
+		Bytes: x509.MarshalPKCS1PrivateKey(caPrivKey),
+	})
+	if err != nil {
+		return err
+	}
+
+	// Save CA certificate
+	caCertFileHandle, err := os.Create(caCertFile)
+	if err != nil {
+		return err
+	}
+	defer caCertFileHandle.Close()
+
+	return pem.Encode(caCertFileHandle, &pem.Block{
+		Type:  "CERTIFICATE",
+		Bytes: caCertDER,
+	})
 }

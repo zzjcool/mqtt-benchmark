@@ -62,10 +62,8 @@ func TestPublishMessage(t *testing.T) {
 
 	pub := NewPublisher(options, "test/topic", 1, 0, "test", 10, 1, 100, 10.0)
 	
-	// Create mock client
-	mockClient := &mockMQTTClient{
-		opts: mqtt.NewClientOptions(),
-	}
+	// Use mock client from mqtt_test.go
+	mockClient := mockNewClientFunc(mqtt.NewClientOptions())
 	mockClient.Connect()
 
 	// Test successful publish
@@ -110,4 +108,19 @@ func TestRunPublish(t *testing.T) {
 	pub.optionsCtx.ConnectTimeout = 1
 	err = pub.RunPublish()
 	assert.Error(t, err, "RunPublish should fail with timeout")
+}
+
+func TestPublisherReport(t *testing.T) {
+	options, cancel := setupTest()
+	defer cancel()
+
+	// Create a publisher with known configuration
+	pub := NewPublisher(options, "test/topic", 1, 0, "test", 10, 0, 100, 10.0)
+	pub.msgCount = 50 // Set a known message count
+
+	// Call report method
+	pub.report()
+
+	// Since report only logs metrics, we can't directly assert its output
+	// But we can verify it doesn't panic and completes successfully
 }

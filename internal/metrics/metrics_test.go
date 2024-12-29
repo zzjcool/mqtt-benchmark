@@ -19,9 +19,8 @@ func TestMetricsOperations(t *testing.T) {
 
 	t.Run("Test MQTTConnectionAttempts", func(t *testing.T) {
 		broker := "test-broker"
-		result := "success"
-		MQTTConnectionAttempts.WithLabelValues(broker, result).Inc()
-		value := GetCounterVecValue(MQTTConnectionAttempts, broker, result)
+		MQTTConnectionAttempts.WithLabelValues(broker).Inc()
+		value := GetCounterVecValue(MQTTConnectionAttempts, broker)
 		assert.Equal(t, float64(1), value)
 	})
 

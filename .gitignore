@@ -34,3 +34,4 @@ Thumbs.db
 __debug_bin*
 
 certs/
+coverage.*

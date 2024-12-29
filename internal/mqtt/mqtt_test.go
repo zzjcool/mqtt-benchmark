@@ -176,7 +176,7 @@ func setupTest() (*OptionsCtx, context.CancelFunc) {
 	metrics.MQTTConnectionAttempts = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "mqtt_connection_attempts",
 		Help: "Number of MQTT connection attempts",
-	}, []string{"broker", "result"})
+	}, []string{"broker"})
 	metrics.MQTTConnectionErrors = prometheus.NewCounterVec(prometheus.CounterOpts{
 		Name: "mqtt_connection_errors",
 		Help: "Number of MQTT connection errors",

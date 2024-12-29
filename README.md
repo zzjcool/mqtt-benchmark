@@ -2,6 +2,10 @@
 
 A powerful, cross-platform, and highly performant benchmark tool for MQTT brokers written in Go. It allows you to test various aspects of MQTT broker performance including connection handling, publishing, and subscribing. The tool provides detailed metrics through Prometheus integration, supports multiple connection and message patterns, and can be easily distributed on Kubernetes.
 
+## Development
+
+For development guidelines, coding standards, and contribution process, please refer to [CONTRIBUTING.md](CONTRIBUTING.md).
+
 ### Features
 
 - Multiple client connections simulation
