@@ -31,6 +31,12 @@ type OptionsCtx struct {
 	Inflight            int  // Maximum inflight messages for QoS 1 and 2
 	WriteTimeout        int  // Write timeout in seconds
 
+	// TLS Configuration
+	CaFile     string // Path to CA certificate file
+	CertFile   string // Path to client certificate file
+	KeyFile    string // Path to client key file
+	SkipVerify bool   // Skip server certificate verification
+
 	OnConnectAttempt func(broker *url.URL, tlsCfg *tls.Config) *tls.Config
 	OnConnect        func(client mqtt.Client, idx uint32)
 

@@ -32,3 +32,5 @@ go.work
 ehthumbs.db
 Thumbs.db
 __debug_bin*
+
+certs/

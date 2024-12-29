@@ -3,6 +3,7 @@ package mqtt
 import (
 	"context"
 	"crypto/tls"
+	"crypto/x509"
 	"errors"
 	"fmt"
 	"net/url"
@@ -99,14 +100,49 @@ func (m *ConnectionManager) RunConnections() error {
 				SetPassword(m.optionsCtx.Password).
 				SetCleanSession(m.optionsCtx.CleanSession).
 				SetKeepAlive(time.Duration(m.optionsCtx.KeepAliveSeconds) * time.Second).
-				SetMaxReconnectInterval(10 * time.Second).
+				SetAutoReconnect(m.optionsCtx.AutoReconnect).
 				SetConnectTimeout(time.Duration(m.optionsCtx.ConnectTimeout) * time.Second).
-				SetAutoReconnect(true).
-				SetConnectRetry(true).
-				SetConnectRetryInterval(time.Second).
-				SetOrderMatters(false).
-				SetWriteTimeout(time.Duration(m.optionsCtx.WriteTimeout) * time.Second).
-				SetMaxResumePubInFlight(1024)
+				SetWriteTimeout(time.Duration(m.optionsCtx.WriteTimeout) * time.Second)
+
+			// Configure TLS if CA file or client certificates are provided
+			if m.optionsCtx.CaFile != "" || m.optionsCtx.CertFile != "" {
+				tlsConfig := &tls.Config{
+					InsecureSkipVerify: m.optionsCtx.SkipVerify,
+				}
+
+				// Load CA certificate if provided
+				if m.optionsCtx.CaFile != "" {
+					if caCert, err := os.ReadFile(m.optionsCtx.CaFile); err == nil {
+						caCertPool := x509.NewCertPool()
+						caCertPool.AppendCertsFromPEM(caCert)
+						tlsConfig.RootCAs = caCertPool
+					} else {
+						m.log.Error("Failed to load CA certificate",
+							zap.String("ca_file", m.optionsCtx.CaFile),
+							zap.Error(err))
+						return
+					}
+				}
+
+				// Load client certificate and key if provided
+				if m.optionsCtx.CertFile != "" && m.optionsCtx.KeyFile != "" {
+					cert, err := tls.LoadX509KeyPair(m.optionsCtx.CertFile, m.optionsCtx.KeyFile)
+					if err != nil {
+						m.log.Error("Failed to load client certificate",
+							zap.String("cert_file", m.optionsCtx.CertFile),
+							zap.String("key_file", m.optionsCtx.KeyFile),
+							zap.Error(err))
+						return
+					}
+					tlsConfig.Certificates = []tls.Certificate{cert}
+				}
+
+				opts.SetTLSConfig(tlsConfig)
+			}
+
+			if m.optionsCtx.OnConnectAttempt != nil {
+				opts.SetTLSConfig(m.optionsCtx.OnConnectAttempt(nil, opts.TLSConfig))
+			}
 
 			opts.SetConnectionLostHandler(func(c mqtt.Client, err error) {
 

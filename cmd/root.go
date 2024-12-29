@@ -36,6 +36,10 @@ const (
 	FlagConnectTimeout   = "connect-timeout"
 	FlagInflight         = "inflight"
 	FlagWriteTimeout     = "write-timeout"
+	FlagCaFile           = "ca-file"
+	FlagCertFile         = "cert-file"
+	FlagKeyFile          = "key-file"
+	FlagSkipVerify       = "skip-verify"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -124,66 +128,63 @@ func init() {
 	rootCmd.PersistentFlags().Int(FlagConnectTimeout, 10, "Connection timeout in seconds")
 	rootCmd.PersistentFlags().Int(FlagWriteTimeout, 5, "Write timeout in seconds")
 
+	// Add TLS configuration flags
+	rootCmd.PersistentFlags().String(FlagCaFile, "", "Path to CA certificate file")
+	rootCmd.PersistentFlags().String(FlagCertFile, "", "Path to client certificate file")
+	rootCmd.PersistentFlags().String(FlagKeyFile, "", "Path to client key file")
+	rootCmd.PersistentFlags().Bool(FlagSkipVerify, false, "Skip server certificate verification")
+
 	// Add metrics flag
 	rootCmd.PersistentFlags().Int(FlagMetricsPort, 2112, "Port to expose Prometheus metrics")
 	rootCmd.PersistentFlags().Int(FlagPprofPort, 0, "pprof port, 0 means disabled")
 }
 
 func fillMqttOptions(cmd *cobra.Command) *mqtt.OptionsCtx {
-	ctx, cancel := context.WithCancel(cmd.Context())
-	o := &mqtt.OptionsCtx{
-		Context:    ctx,
-		CancelFunc: cancel,
+	ctx := cmd.Context()
+	if ctx == nil {
+		ctx = context.Background()
 	}
-	var err error
-	if o.Servers, err = cmd.Flags().GetStringArray(FlagServers); err != nil {
-		panic(err)
-	}
+	ctx, cancel := context.WithCancel(ctx)
 
-	if o.User, err = cmd.Flags().GetString(FlagUser); err != nil {
-		panic(err)
-	}
+	servers, _ := cmd.Flags().GetStringArray(FlagServers)
+	user, _ := cmd.Flags().GetString(FlagUser)
+	password, _ := cmd.Flags().GetString(FlagPassword)
+	clientNum, _ := cmd.Flags().GetUint32(FlagClientNum)
+	cleanSession, _ := cmd.Flags().GetBool(FlagCleanSession)
+	keepAlive, _ := cmd.Flags().GetInt(FlagKeepAlive)
+	connRate, _ := cmd.Flags().GetInt(FlagConnRate)
+	clientPrefix, _ := cmd.Flags().GetString(FlagClientPrefix)
+	connectTimeout, _ := cmd.Flags().GetInt(FlagConnectTimeout)
+	writeTimeout, _ := cmd.Flags().GetInt(FlagWriteTimeout)
+	inflight, _ := cmd.Flags().GetInt(FlagInflight)
 
-	if o.Password, err = cmd.Flags().GetString(FlagPassword); err != nil {
-		panic(err)
-	}
+	// Get TLS configuration flags
+	caFile, _ := cmd.Flags().GetString(FlagCaFile)
+	certFile, _ := cmd.Flags().GetString(FlagCertFile)
+	keyFile, _ := cmd.Flags().GetString(FlagKeyFile)
+	skipVerify, _ := cmd.Flags().GetBool(FlagSkipVerify)
 
-	if o.ClientNum, err = cmd.Flags().GetUint32(FlagClientNum); err != nil {
-		panic(err)
-	}
+	return &mqtt.OptionsCtx{
+		Context:     ctx,
+		CancelFunc:  cancel,
+		Servers:     servers,
+		User:        user,
+		Password:    password,
+		ClientNum:   clientNum,
+		ClientPrefix: clientPrefix,
+		ConnRate:    connRate,
 
-	if o.ClientPrefix, err = cmd.Flags().GetString(FlagClientPrefix); err != nil {
-		panic(err)
-	}
+		AutoReconnect:        true,
+		CleanSession:         cleanSession,
+		KeepAliveSeconds:     keepAlive,
+		ConnectTimeout:       connectTimeout,
+		WriteTimeout:         writeTimeout,
+		Inflight:            inflight,
 
-	if o.CleanSession, err = cmd.Flags().GetBool(FlagCleanSession); err != nil {
-		panic(err)
+		// TLS Configuration
+		CaFile:     caFile,
+		CertFile:   certFile,
+		KeyFile:    keyFile,
+		SkipVerify: skipVerify,
 	}
-
-	if o.KeepAliveSeconds, err = cmd.Flags().GetInt(FlagKeepAlive); err != nil {
-		panic(err)
-	}
-
-	if o.ConnRate, err = cmd.Flags().GetInt(FlagConnRate); err != nil {
-		panic(err)
-	}
-
-	if o.ConnectTimeout, err = cmd.Flags().GetInt(FlagConnectTimeout); err != nil {
-		panic(err)
-	}
-	if o.WriteTimeout, err = cmd.Flags().GetInt(FlagWriteTimeout); err != nil {
-		panic(err)
-	}
-	if o.WaitForClients, err = cmd.Flags().GetBool(FlagWaitForClients); err != nil {
-		panic(err)
-	}
-
-	numRetry, err := cmd.Flags().GetInt(FlagRetryConnect)
-	if err != nil {
-		panic(err)
-	}
-	o.ConnectRetry = numRetry > 0
-	o.ConnectRetryInterval = numRetry
-
-	return o
 }
