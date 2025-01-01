@@ -159,6 +159,7 @@ func fillMqttOptions(cmd *cobra.Command) *mqtt.OptionsCtx {
 	connectTimeout, _ := cmd.Flags().GetInt(FlagConnectTimeout)
 	writeTimeout, _ := cmd.Flags().GetInt(FlagWriteTimeout)
 	inflight, _ := cmd.Flags().GetInt(FlagInflight)
+	waitForClients, _ := cmd.Flags().GetBool(FlagWaitForClients)
 
 	// Get TLS configuration flags
 	caCertFile, _ := cmd.Flags().GetString(FlagCaCertFile)
@@ -183,6 +184,7 @@ func fillMqttOptions(cmd *cobra.Command) *mqtt.OptionsCtx {
 		ConnectTimeout:   connectTimeout,
 		WriteTimeout:     writeTimeout,
 		Inflight:         inflight,
+		WaitForClients: waitForClients,
 
 		// TLS Configuration
 		CaCertFile:     caCertFile,
