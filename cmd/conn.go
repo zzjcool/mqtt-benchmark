@@ -19,22 +19,17 @@ connection rate, number of clients, and authentication settings.`,
 	Run: func(cmd *cobra.Command, args []string) {
 		log := logger.GetLogger()
 
-		// 获取保持连接时间
 		keepTime, _ := cmd.Flags().GetInt("keep-time")
 
-		// 获取 MQTT 选项
 		options := fillMqttOptions(cmd)
 
-		// 创建连接管理器
 		connManager := internalmqtt.NewConnectionManager(options, keepTime)
 
-		// 运行连接测试
 		if err := connManager.RunConnections(); err != nil {
 			log.Error("Failed to run connections", zap.Error(err))
 			os.Exit(1)
 		}
 
-		// 保持连接（如果需要）
 		if err := connManager.KeepConnections(); err != nil {
 			log.Error("Failed to keep connections", zap.Error(err))
 			os.Exit(1)

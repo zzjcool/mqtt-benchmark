@@ -17,16 +17,13 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-// generateTestCertificates 生成用于测试的 TLS 证书
+// generateTestCertificates
 func generateTestCertificates(t *testing.T) (certFile, keyFile, caFile string, cleanup func()) {
-	// 创建临时目录
 	tempDir := t.TempDir()
 
-	// 生成 CA 私钥
 	caPrivKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	assert.NoError(t, err)
 
-	// 创建 CA 证书模板
 	caTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(1),
 		Subject: pkix.Name{
@@ -39,11 +36,9 @@ func generateTestCertificates(t *testing.T) (certFile, keyFile, caFile string, c
 		IsCA:                  true,
 	}
 
-	// 创建 CA 证书
 	caBytes, err := x509.CreateCertificate(rand.Reader, caTemplate, caTemplate, &caPrivKey.PublicKey, caPrivKey)
 	assert.NoError(t, err)
 
-	// 保存 CA 证书
 	caFile = filepath.Join(tempDir, "ca.pem")
 	caOut, err := os.Create(caFile)
 	assert.NoError(t, err)
@@ -51,11 +46,9 @@ func generateTestCertificates(t *testing.T) (certFile, keyFile, caFile string, c
 	assert.NoError(t, err)
 	caOut.Close()
 
-	// 生成客户端私钥
 	clientPrivKey, err := rsa.GenerateKey(rand.Reader, 2048)
 	assert.NoError(t, err)
 
-	// 创建客户端证书模板
 	clientTemplate := &x509.Certificate{
 		SerialNumber: big.NewInt(2),
 		Subject: pkix.Name{
@@ -68,11 +61,9 @@ func generateTestCertificates(t *testing.T) (certFile, keyFile, caFile string, c
 		BasicConstraintsValid: true,
 	}
 
-	// 创建客户端证书
 	clientBytes, err := x509.CreateCertificate(rand.Reader, clientTemplate, caTemplate, &clientPrivKey.PublicKey, caPrivKey)
 	assert.NoError(t, err)
 
-	// 保存客户端证书
 	certFile = filepath.Join(tempDir, "client-cert.pem")
 	certOut, err := os.Create(certFile)
 	assert.NoError(t, err)
@@ -80,7 +71,6 @@ func generateTestCertificates(t *testing.T) (certFile, keyFile, caFile string, c
 	assert.NoError(t, err)
 	certOut.Close()
 
-	// 保存客户端私钥
 	keyFile = filepath.Join(tempDir, "client-key.pem")
 	keyOut, err := os.Create(keyFile)
 	assert.NoError(t, err)
@@ -89,7 +79,7 @@ func generateTestCertificates(t *testing.T) (certFile, keyFile, caFile string, c
 	keyOut.Close()
 
 	cleanup = func() {
-		// 使用 t.TempDir() 会自动清理临时目录，所以这里不需要手动清理
+		// do nothing, no cleanup needed
 	}
 
 	return certFile, keyFile, caFile, cleanup
@@ -109,16 +99,16 @@ func TestSetNewClientFunc(t *testing.T) {
 
 	// Verify the newClientFunc was changed
 	assert.NotNil(t, manager.optionsCtx.newClientFunc, "Custom newClientFunc should not be nil")
-	
+
 	// Create a client using the mock function
 	client := manager.optionsCtx.newClientFunc(mqtt.NewClientOptions())
 	assert.NotNil(t, client, "Client created with mock function should not be nil")
-	
+
 	// Test the mock client behavior
 	mockClient, ok := client.(*mockMQTTClient)
 	assert.True(t, ok, "Client should be of type mockMQTTClient")
 	assert.False(t, mockClient.IsConnected(), "New client should not be connected")
-	
+
 	mockClient.Connect()
 	assert.True(t, mockClient.IsConnected(), "Client should be connected after Connect()")
 }
@@ -126,7 +116,7 @@ func TestSetNewClientFunc(t *testing.T) {
 func TestRunConnections(t *testing.T) {
 	options, cancel := setupTest()
 	defer cancel()
-	
+
 	manager := NewConnectionManager(options, 1)
 	manager.SetNewClientFunc(mockNewClientFunc)
 
@@ -151,10 +141,10 @@ func TestRunConnections(t *testing.T) {
 func TestRunConnectionsWithError(t *testing.T) {
 	options, cancel := setupTest()
 	defer cancel()
-	
+
 	// Set a short connection timeout
 	options.ConnectTimeout = 1 // 1 second timeout
-	
+
 	manager := NewConnectionManager(options, 1)
 	expectedErr := errors.New("connection failed")
 	manager.SetNewClientFunc(mockNewClientFuncWithError(expectedErr))
@@ -162,7 +152,6 @@ func TestRunConnectionsWithError(t *testing.T) {
 	// Run connections
 	err := manager.RunConnections()
 	assert.Error(t, err, "RunConnections should return error on connection failure")
-
 
 	// Wait for a short time to allow all connection attempts to complete
 	time.Sleep(100 * time.Millisecond)
@@ -176,10 +165,10 @@ func TestRunConnectionsWithError(t *testing.T) {
 func TestRunConnectionsWithTimeout(t *testing.T) {
 	options, cancel := setupTest()
 	defer cancel()
-	
+
 	// Set a very short connection timeout
 	options.ConnectTimeout = 1
-	
+
 	manager := NewConnectionManager(options, 1)
 	manager.SetNewClientFunc(mockNewClientFuncWithDelay(2 * time.Second))
 
@@ -199,7 +188,7 @@ func TestRunConnectionsWithTimeout(t *testing.T) {
 func TestKeepConnections(t *testing.T) {
 	options, cancel := setupTest()
 	defer cancel()
-	
+
 	manager := NewConnectionManager(options, 1)
 	manager.SetNewClientFunc(mockNewClientFunc)
 
@@ -230,7 +219,7 @@ func TestKeepConnections(t *testing.T) {
 func TestDisconnectAll(t *testing.T) {
 	options, cancel := setupTest()
 	defer cancel()
-	
+
 	manager := NewConnectionManager(options, 1)
 	manager.SetNewClientFunc(mockNewClientFunc)
 
@@ -297,7 +286,6 @@ func TestInvalidTLSCertificates(t *testing.T) {
 	options, cancel := setupTest()
 	defer cancel()
 
-	// 使用临时目录中的无效证书路径
 	tempDir := t.TempDir()
 	options.ClientCertFile = filepath.Join(tempDir, "non-existent-cert.pem")
 	options.ClientKeyFile = filepath.Join(tempDir, "non-existent-key.pem")
@@ -307,7 +295,6 @@ func TestInvalidTLSCertificates(t *testing.T) {
 	manager := NewConnectionManager(options, 1)
 	manager.SetNewClientFunc(mockNewClientFunc)
 
-	// 运行连接
 	err := manager.RunConnections()
 	assert.Error(t, err, "RunConnections with invalid TLS certificates should return error")
 }
@@ -316,18 +303,15 @@ func TestInsecureSkipVerifyTLS(t *testing.T) {
 	options, cancel := setupTest()
 	defer cancel()
 
-	// 设置跳过证书验证
 	options.SkipVerify = true
 	options.Servers = []string{"tls://localhost:8883"}
 
 	manager := NewConnectionManager(options, 1)
 	manager.SetNewClientFunc(mockNewClientFunc)
 
-	// 运行连接
 	err := manager.RunConnections()
 	assert.NoError(t, err, "RunConnections with skip verify should not return error")
 
-	// 验证客户端是否已连接
 	manager.clientsMutex.Lock()
 	assert.Equal(t, 2, len(manager.activeClients), "Should have created 2 clients with skip verify")
 	for i, client := range manager.activeClients {
@@ -417,9 +401,9 @@ func generateTestCACertificate(caKeyFile, caCertFile string) error {
 		},
 		NotBefore:             time.Now(),
 		NotAfter:              time.Now().Add(24 * time.Hour),
-		KeyUsage:             x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
+		KeyUsage:              x509.KeyUsageCertSign | x509.KeyUsageDigitalSignature,
 		BasicConstraintsValid: true,
-		IsCA:                 true,
+		IsCA:                  true,
 	}
 
 	// Create CA certificate
