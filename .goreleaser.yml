@@ -19,7 +19,6 @@ builds:
     main: ./cmd/mqtt-benchmark
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
-    timeout: 30m
 
 archives:
   - format: tar.gz
