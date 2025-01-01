@@ -16,7 +16,7 @@ builds:
       - arm
     goarm:
       - "7"
-    main: ./cmd/mqtt-benchmark
+    main: ./
     ldflags:
       - -s -w -X main.version={{.Version}} -X main.commit={{.Commit}} -X main.date={{.Date}}
 
