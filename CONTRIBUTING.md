@@ -75,3 +75,30 @@ go mod download
    - Update README.md for major changes
    - Document configuration options
    - Include deployment instructions
+
+### Release Process
+1. Release Automation
+   - GitHub releases are automatically created when pushing a git tag
+   - Tags should follow semantic versioning (e.g., v1.0.0)
+   - Binary artifacts are automatically built for:
+     - Operating Systems: Linux, Windows, macOS
+     - Architectures: x86_64 (amd64), ARM64, ARMv7
+   - Docker images are automatically built and pushed to GitHub Container Registry (ghcr.io)
+     - Multi-platform images: linux/amd64, linux/arm64, linux/arm/v7
+     - Tags follow the pattern: version (e.g., v1.0.0), major.minor (e.g., v1.0)
+
+2. Creating a Release
+```bash
+# Ensure you're on the main branch
+git checkout main
+git pull
+
+# Create and push a new tag
+git tag -a v1.0.0 -m "Release v1.0.0"
+git push origin v1.0.0
+```
+
+The GitHub Actions workflow will automatically:
+- Create a GitHub release
+- Build and attach binary artifacts
+- Build and push multi-platform Docker images
