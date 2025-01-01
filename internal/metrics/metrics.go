@@ -104,10 +104,15 @@ var (
 	})
 
 	// Subscriber metrics
-	MQTTActiveSubscribers = promauto.NewGaugeVec(prometheus.GaugeOpts{
+	MQTTActiveSubscribers = promauto.NewGauge(prometheus.GaugeOpts{
 		Name: "mqtt_benchmark_active_subscribers",
 		Help: "The current number of active MQTT subscribers",
-	}, []string{"topic"})
+	})
+
+	MQTTActivePublishers = promauto.NewGauge(prometheus.GaugeOpts{
+		Name: "mqtt_benchmark_active_publishers",
+		Help: "The current number of active MQTT publishers",
+	})
 
 	MQTTSubscriptionErrors = promauto.NewCounterVec(prometheus.CounterOpts{
 		Name: "mqtt_benchmark_subscription_errors_total",

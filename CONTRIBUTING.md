@@ -44,9 +44,14 @@ go mod download
    - All code comments must be in English
 
 2. Testing and Command Execution
-   - Unit tests and information viewing commands should be executed automatically
-   - All test and long-running commands should include timeout parameters
+   - Unit tests and information viewing commands should be executed automatically without confirmation
+   - All test and long-running commands should include timeout parameters or execution time limits
    - Default timeouts should be reasonable for the operation
+
+3. Code Modifications
+   - All code changes must adhere to these development guidelines
+   - Identify and propose improvements to guidelines during development
+   - Update documentation accordingly when guidelines are enhanced
 
 ### Testing Requirements
 1. Unit Tests

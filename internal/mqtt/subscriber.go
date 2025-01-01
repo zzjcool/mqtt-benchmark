@@ -64,7 +64,6 @@ func (s *Subscriber) RunSubscribe() error {
 
 	defer connManager.DisconnectAll()
 
-
 	<-s.optionsCtx.Done()
 
 	s.log.Info("Subscribe test completed",
@@ -77,6 +76,7 @@ func (s *Subscriber) handleClientConnect(client mqtt.Client, idx uint32) {
 	clientTopicGen := NewTopicGenerator(s.topicGenerator.TopicTemplate, s.topicGenerator.TopicNum, idx)
 	s.log.Debug("Subscriber goroutine started",
 		zap.Uint32("client_id", idx))
+	metrics.MQTTActiveSubscribers.Inc()
 
 	// Create message handler
 	messageHandler := func(c mqtt.Client, msg mqtt.Message) {

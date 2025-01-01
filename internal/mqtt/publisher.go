@@ -143,7 +143,7 @@ func (p *Publisher) asyncPublish(client mqtt.Client, topicGen *TopicGenerator) c
 	// For QoS 1 and 2, handle asynchronously
 	go func() {
 		defer close(result)
-		if token.WaitTimeout(time.Duration(p.optionsCtx.WriteTimeout)*time.Second) {
+		if token.WaitTimeout(time.Duration(p.optionsCtx.WriteTimeout) * time.Second) {
 			err := token.Error()
 			if err == nil {
 				metrics.MQTTPublishSuccessTotal.Inc()
@@ -172,6 +172,7 @@ func (p *Publisher) asyncPublish(client mqtt.Client, topicGen *TopicGenerator) c
 func (p *Publisher) handleClientConnect(client mqtt.Client, idx uint32) {
 	p.wg.Add(1)
 	defer p.wg.Done()
+	metrics.MQTTActivePublishers.Inc()
 	clientOptionsReader := client.OptionsReader()
 	clientID := clientOptionsReader.ClientID()
 	// Create a new TopicGenerator for each client with its own clientID
