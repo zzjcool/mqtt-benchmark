@@ -23,9 +23,32 @@ For development guidelines, coding standards, and contribution process, please r
 
 ## Installation
 
+### Using Go Install
+
 ```bash
 go install github.com/zzjcool/mqtt-benchmark@latest
 ```
+
+### Download Binary
+
+You can download pre-built binaries for your platform from the [releases page](https://github.com/zzjcool/mqtt-benchmark/releases).
+
+### Using Docker
+
+You can run mqtt-benchmark using the official Docker image:
+
+```bash
+docker pull zzjcool/mqtt-benchmark
+docker run zzjcool/mqtt-benchmark --help
+
+# Example: Running connection test
+docker run zzjcool/mqtt-benchmark conn -S host.docker.internal:1883 -c 100
+
+# Example: Publishing messages
+docker run zzjcool/mqtt-benchmark pub -S host.docker.internal:1883 -t test -C 100
+```
+
+Note: When running in Docker and connecting to a broker on your host machine, use `host.docker.internal` instead of `localhost`.
 
 ## Usage
 
