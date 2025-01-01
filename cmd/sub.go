@@ -58,9 +58,10 @@ func init() {
 	rootCmd.AddCommand(subCmd)
 
 	// Add sub-specific flags
-	subCmd.Flags().String(FlagTopic, "test", "Topic to subscribe to")
-	subCmd.Flags().Int(FlagTopicNum, 1, "Number of topics to subscribe to")
-	subCmd.Flags().Int(FlagQoS, 0, "QoS level (0, 1, or 2)")
+	subCmd.PersistentFlags().StringP(FlagTopic, "t", "", "Topic to subscribe to")
+	subCmd.MarkPersistentFlagRequired(FlagTopic)
+	subCmd.PersistentFlags().IntP(FlagTopicNum, "N", 1, "Number of topics to subscribe to")
+	subCmd.PersistentFlags().IntP(FlagQoS, "q", 0, "QoS level (0, 1, or 2)")
 	subCmd.Flags().Int(FlagTimeout, 5, "Timeout for subscribe operations in seconds")
 	subCmd.Flags().Int("keep-time", 0, "Time to keep connections alive after subscription (0 means no keep-alive)")
 	subCmd.Flags().Bool(FlagParseTimestamp, false, "Parse timestamp from the beginning of payload")

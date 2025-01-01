@@ -246,7 +246,7 @@ func (p *Publisher) handleClientConnect(client mqtt.Client, idx uint32) {
 // RunPublish starts the publishing process
 func (p *Publisher) RunPublish() error {
 	p.log.Info("Starting publish test",
-		zap.String("topic", p.topicGenerator.NextTopic()),
+		zap.String("topic", p.topicGenerator.TopicTemplate),
 		zap.Int("qos", p.qos),
 		zap.Int("count", p.count),
 		zap.Float64("rate", p.rate),

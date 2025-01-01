@@ -60,11 +60,12 @@ func init() {
 	rootCmd.AddCommand(pubCmd)
 
 	// Add pub-specific flags
-	pubCmd.Flags().String(FlagTopic, "test", "Topic to publish to")
+	pubCmd.PersistentFlags().StringP(FlagTopic, "t", "", "Topic to publish to")
+	pubCmd.MarkPersistentFlagRequired(FlagTopic)
+	pubCmd.PersistentFlags().IntP(FlagQoS, "q", 0, "QoS level (0, 1, or 2)")
 	pubCmd.Flags().Int(FlagTopicNum, 1, "Number of topics to publish to")
 	pubCmd.Flags().String(FlagPayload, "", "Fixed payload to publish")
-	pubCmd.Flags().Int(FlagPayloadSize, 100, "Size of random payload in bytes")
-	pubCmd.Flags().Int(FlagQoS, 0, "QoS level (0, 1, or 2)")
+	pubCmd.Flags().IntP(FlagPayloadSize, "S", 100, "Size of random payload in bytes")
 	pubCmd.Flags().Int(FlagCount, 0, "Number of messages to publish, default 0 (infinite)")
 	pubCmd.Flags().Float64(FlagRate, 1.0, "Messages per second per client")
 	pubCmd.Flags().Int(FlagTimeout, 5, "Timeout for publish operations in seconds")

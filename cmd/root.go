@@ -41,6 +41,18 @@ const (
 	FlagClientCertFile = "client-cert-file"
 	FlagClientKeyFile  = "client-key-file"
 	FlagSkipVerify     = "skip-verify"
+
+	FlagTopic          = "topic"
+	FlagTopicNum       = "topic-num"
+	FlagPayload        = "payload"
+	FlagPayloadSize    = "payload-size"
+	FlagQoS            = "qos"
+	FlagCount          = "count"
+	FlagRate           = "rate"
+	FlagTimeout        = "timeout"
+	FlagWithTimestamp  = "with-timestamp"
+	FlagParseTimestamp = "parse-timestamp"
+	FlagWaitForClients = "wait-for-clients"
 )
 
 // rootCmd represents the base command when called without any subcommands
@@ -114,12 +126,14 @@ func init() {
 	// rootCmd.PersistentFlags().StringVar(&cfgFile, "config", "", "config file (default is $HOME/.mqtt-benchmark.yaml)")
 
 	// Add persistent flags
-	rootCmd.PersistentFlags().StringArrayP(FlagServers, "S", []string{"127.0.0.1:1883"}, "mqtt servers")
+	rootCmd.PersistentFlags().StringArrayP(FlagServers, "s", []string{"127.0.0.1:1883"}, "mqtt servers")
 	rootCmd.PersistentFlags().StringP(FlagUser, "u", "", "mqtt server username")
-	rootCmd.PersistentFlags().StringP(FlagPassword, "P", "", "mqtt server password")
+	rootCmd.PersistentFlags().StringP(FlagPassword, "p", "", "mqtt server password")
 	rootCmd.PersistentFlags().Uint32P(FlagClientNum, "c", 100, "mqtt client num")
 	rootCmd.PersistentFlags().String(FlagLogLevel, "info", "log level (debug, info, warn, error)")
 	rootCmd.PersistentFlags().StringP(FlagClientPrefix, "n", "mqtt-benchmark", "client ID prefix")
+	rootCmd.PersistentFlags().BoolP(FlagWaitForClients, "w", false, "Wait for other clients to be ready before starting")
+
 
 	// Add common MQTT connection flags
 	rootCmd.PersistentFlags().BoolP(FlagCleanSession, "L", true, "clean session")
