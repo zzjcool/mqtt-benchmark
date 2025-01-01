@@ -144,7 +144,7 @@ func init() {
 	rootCmd.PersistentFlags().String(FlagCaCertFile, "", "Path to CA certificate file")
 	rootCmd.PersistentFlags().String(FlagCaKeyFile, "", "Path to CA private key file for dynamic certificate generation")
 	rootCmd.PersistentFlags().String(FlagClientCertFile, "", "Path to client certificate file")
-	rootCmd.PersistentFlags().String(FlagClientKeyFile, "", "Path to client key file")
+	rootCmd.PersistentFlags().String(FlagClientKeyFile, "", "Path to client key file, required for dynamic certificate generation")
 	rootCmd.PersistentFlags().Bool(FlagSkipVerify, false, "Skip server certificate verification")
 
 	// Add metrics flag

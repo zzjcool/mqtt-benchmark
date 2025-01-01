@@ -60,6 +60,5 @@ func init() {
 	subCmd.PersistentFlags().IntP(FlagTopicNum, "N", 1, "Number of topics to subscribe to")
 	subCmd.PersistentFlags().IntP(FlagQoS, "q", 0, "QoS level (0, 1, or 2)")
 	subCmd.Flags().Int(FlagTimeout, 5, "Timeout for subscribe operations in seconds")
-	subCmd.Flags().Int("keep-time", 0, "Time to keep connections alive after subscription (0 means no keep-alive)")
 	subCmd.Flags().Bool(FlagParseTimestamp, false, "Parse timestamp from the beginning of payload")
 }

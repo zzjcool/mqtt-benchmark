@@ -60,18 +60,26 @@ The tool provides three main commands:
 ### Global Flags
 
 ```bash
-  -S, --servers strings        MQTT broker addresses (default [127.0.0.1:1883])
-  -u, --user string           MQTT username
-  -P, --pass string           MQTT password
-  -c, --clientNum uint16      Number of MQTT clients to create (default 100)
-      --log-level string      Log level (debug, info, warn, error) (default "info")
-  -n, --client-prefix string  Client ID prefix (default "mqtt-benchmark")
-  -L, --clean                 Use clean session (default true)
-      --keepalive int         Keepalive interval in seconds (default 60)
-      --num-retry-connect int Number of connection retry attempts
-  -R, --connrate int         Connection rate limit per second
-      --metrics-port int     Prometheus metrics port (default 2112)
-      --pprof-port int      pprof port (0 to disable)
+      --ca-cert-file string       Path to CA certificate file
+      --ca-key-file string        Path to CA private key file for dynamic certificate generation
+  -L, --clean                     Clean session (default true)
+      --client-cert-file string   Path to client certificate file
+      --client-key-file string    Path to client key file
+  -n, --client-prefix string      Client ID prefix (default "mqtt-benchmark")
+  -c, --clientNum uint32         Number of MQTT clients (default 100)
+      --connect-timeout int       Connection timeout in seconds (default 10)
+  -R, --connrate int             Connection rate limit per second
+      --keepalive int            Keepalive interval in seconds (default 60)
+      --log-level string         Log level (debug, info, warn, error) (default "info")
+      --metrics-port int         Port to expose Prometheus metrics (default 2112)
+      --num-retry-connect int    Number of times to retry connecting
+  -p, --pass string              MQTT broker password
+      --pprof-port int          pprof port (0 to disable)
+  -s, --servers stringArray      MQTT broker addresses (default [127.0.0.1:1883])
+      --skip-verify             Skip server certificate verification
+  -u, --user string             MQTT broker username
+  -w, --wait-for-clients        Wait for other clients to be ready before starting
+      --write-timeout int       Write timeout in seconds (default 5)
 ```
 
 ### Topic Templates
@@ -99,12 +107,16 @@ mqtt-benchmark pub -t "client%i/data/%d" -c 2 -N 3 -C 100
 
 ### Connection Command (conn)
 
+The `conn` command is used to test broker connection handling capabilities with various parameters like connection rate, number of clients, and authentication settings.
+
 ```bash
 mqtt-benchmark conn [flags]
 
+# All global flags are also available for this command
 Flags:
-      --keep-time int      Time to keep connections alive (seconds)
-                          0: don't keep, -1: keep forever (default 0)
+      --keep-time int   Time to keep connections alive after all connections are established (in seconds)
+                       0: don't keep, -1: keep forever
+                       Example: --keep-time=60
 ```
 
 Example:
@@ -112,70 +124,72 @@ Example:
 # Connect 1000 clients at rate of 100 connections per second
 mqtt-benchmark conn -c 1000 -R 100
 
-# Connect 500 clients and keep connections for 5 minutes
-mqtt-benchmark conn -c 500 --keep-time 300
+# Connect with TLS using certificates and keep connections for 5 minutes
+mqtt-benchmark conn --ca-cert-file ca.crt --client-cert-file client.crt --client-key-file client.key --keep-time 300
 
-# Connect to multiple brokers with authentication
-mqtt-benchmark conn -S broker1:1883 -S broker2:1883 -u user1 -P pass1 -c 100
-
-# Connect with custom client IDs and clean session disabled
-mqtt-benchmark conn -n "custom-client" -L=false -c 50
+# Connect with authentication, custom timeouts and wait for all clients
+mqtt-benchmark conn -u user1 -p pass1 --connect-timeout 15 --write-timeout 10 -w
 ```
 
 ### Publisher Command (pub)
 
+The `pub` command is used to test broker publishing performance with various parameters like message size, QoS level, publishing rate, and number of messages.
+
 ```bash
 mqtt-benchmark pub [flags]
 
+# All global flags are also available for this command
 Flags:
-  -t, --topic string          Topic to publish to (required)
-  -N, --topic-num int        Number of topics per client (default 1)
-  -p, --payload string       Message payload
-  -s, --payload-size int     Size of generated payload in bytes (default 100)
-  -q, --qos int             QoS level (0, 1, or 2) (default 0)
-  -C, --count int           Number of messages to publish (default 1)
-  -i, --interval int        Interval between messages in milliseconds
-  -r, --rate int           Message rate limit per second
-      --timeout duration    Operation timeout (default 5s)
-      --with-timestamp     Add timestamp to message payload
+      --count int          Number of messages to publish, default 0 (infinite)
+      --inflight int       Maximum inflight messages for QoS 1 and 2, value 0 for 'infinity'
+      --payload string     Fixed payload to publish
+  -S, --payload-size int   Size of random payload in bytes (default 100)
+  -q, --qos int           QoS level (0, 1, or 2)
+      --rate float        Messages per second per client (default 1)
+      --timeout int       Timeout for publish operations in seconds (default 5)
+  -t, --topic string      Topic to publish to
+      --topic-num int     Number of topics to publish to (default 1)
+      --with-timestamp   Add timestamp to the beginning of payload
 ```
 
 Example:
 ```bash
-# Publish 1000 messages of 100 bytes to topic "test" with QoS 1
-mqtt-benchmark pub -t test -q 1 -C 1000 -s 100
+# Publish infinite messages with QoS 1 and 100 byte payload at rate of 100 msg/s
+mqtt-benchmark pub -t test -q 1 -S 100 --rate 100
 
-# Publish to multiple topics per client
-mqtt-benchmark pub -t "test/%d" -N 3 -C 100
+# Publish to multiple topics with custom payload and inflight limit
+mqtt-benchmark pub -t sensor/data --topic-num 5 --payload "test data" --inflight 100
 
-# Each client publishes to its own set of topics
-mqtt-benchmark pub -t "client%i/sensor/%d" -c 5 -N 2 -C 100
+# Publish with TLS and timestamp in payload
+mqtt-benchmark pub -t events --ca-cert-file ca.crt --with-timestamp --timeout 10
 ```
 
 ### Subscriber Command (sub)
 
+The `sub` command is used to test broker subscription performance with various parameters like QoS level and topic filters.
+
 ```bash
 mqtt-benchmark sub [flags]
 
+# All global flags are also available for this command
 Flags:
-  -t, --topic string          Topic to subscribe to (required)
-  -N, --topic-num int        Number of topics per client (default 1)
-  -q, --qos int             QoS level (0, 1, or 2) (default 0)
-      --timeout duration    Operation timeout (default 5s)
-      --parse-timestamp    Parse timestamp from message payload
-      --keep-time int      Time to keep connections alive after subscription
+      --parse-timestamp   Parse timestamp from the beginning of payload
+  -q, --qos int          QoS level (0, 1, or 2)
+      --timeout int      Timeout for subscribe operations in seconds (default 5)
+  -t, --topic string     Topic to subscribe to
+  -N, --topic-num int    Number of topics to subscribe to (default 1)
 ```
 
 Example:
 ```bash
-# Subscribe to topic "test" with QoS 1
-mqtt-benchmark sub -t test -q 1
+# Subscribe to multiple topics with QoS 1
+mqtt-benchmark sub -t "test/#" -q 1 -N 5
 
-# Subscribe to multiple topics per client
-mqtt-benchmark sub -t "test/%d" -N 3
+# Subscribe with timestamp parsing and custom timeout
+mqtt-benchmark sub -t "sensor/+" --parse-timestamp --timeout 30
 
-# Each client subscribes to its own set of topics
-mqtt-benchmark sub -t "client%i/sensor/%d" -c 5 -N 2
+# Subscribe with TLS
+mqtt-benchmark sub -t events --ca-cert-file ca.crt --client-cert-file client.crt
 ```
 
 ## Metrics
