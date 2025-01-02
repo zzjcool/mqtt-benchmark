@@ -117,6 +117,7 @@ func (m *ConnectionManager) RunConnections() error {
 				SetConnectTimeout(time.Duration(m.optionsCtx.ConnectTimeout) * time.Second).
 				SetWriteTimeout(time.Duration(m.optionsCtx.WriteTimeout) * time.Second).
 				SetAutoReconnect(m.optionsCtx.AutoReconnect).
+				SetMaxResumePubInFlight(m.optionsCtx.Inflight).
 				SetConnectRetry(m.optionsCtx.ConnectRetry).
 				SetConnectRetryInterval(time.Duration(m.optionsCtx.ConnectRetryInterval) * time.Second)
 

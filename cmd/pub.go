@@ -70,5 +70,5 @@ func init() {
 	pubCmd.Flags().Float64(FlagRate, 1.0, "Messages per second per client")
 	pubCmd.Flags().Int(FlagTimeout, 5, "Timeout for publish operations in seconds")
 	pubCmd.Flags().Bool(FlagWithTimestamp, false, "Add timestamp to the beginning of payload")
-	pubCmd.Flags().Int(FlagInflight, 0, "Maximum inflight messages for QoS 1 and 2, value 0 for 'infinity'")
+	pubCmd.Flags().Int(FlagInflight, 1, "Maximum inflight messages for QoS 1 and 2, value 0 for 'infinity', default 1")
 }
