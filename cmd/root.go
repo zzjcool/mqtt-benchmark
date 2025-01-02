@@ -131,7 +131,6 @@ func init() {
 	rootCmd.PersistentFlags().StringP(FlagClientPrefix, "n", "mqtt-benchmark", "client ID prefix")
 	rootCmd.PersistentFlags().BoolP(FlagWaitForClients, "w", false, "Wait for other clients to be ready before starting")
 
-
 	// Add common MQTT connection flags
 	rootCmd.PersistentFlags().BoolP(FlagCleanSession, "L", true, "clean session")
 	rootCmd.PersistentFlags().Int(FlagKeepAlive, 60, "keepalive interval in seconds")
@@ -189,13 +188,15 @@ func fillMqttOptions(cmd *cobra.Command) *mqtt.OptionsCtx {
 		ClientPrefix: clientPrefix,
 		ConnRate:     connRate,
 
-		AutoReconnect:    true,
-		CleanSession:     cleanSession,
-		KeepAliveSeconds: keepAlive,
-		ConnectTimeout:   connectTimeout,
-		WriteTimeout:     writeTimeout,
-		Inflight:         inflight,
-		WaitForClients: waitForClients,
+		AutoReconnect:        true,
+		CleanSession:         cleanSession,
+		KeepAliveSeconds:     keepAlive,
+		ConnectTimeout:       connectTimeout,
+		WriteTimeout:         writeTimeout,
+		Inflight:             inflight,
+		WaitForClients:       waitForClients,
+		ConnectRetryInterval: 5,
+		ConnectRetry:         true,
 
 		// TLS Configuration
 		CaCertFile:     caCertFile,

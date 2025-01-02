@@ -78,6 +78,12 @@ func (m *ConnectionManager) RunConnections() error {
 	onceConnected := sync.Once{}
 	onceConnectedDone := make(chan bool)
 
+	inflightCh := make(chan struct{}, m.optionsCtx.ConnRate)
+	// Initialize inflightCh with tokens
+	for i := 0; i < m.optionsCtx.ConnRate; i++ {
+		inflightCh <- struct{}{}
+	}
+
 	for i := uint32(0); i < m.optionsCtx.ClientNum; i++ {
 		// Wait for rate limiter
 		if err := limiter.Wait(m.optionsCtx); err != nil {
@@ -88,10 +94,13 @@ func (m *ConnectionManager) RunConnections() error {
 			m.log.Error("Rate limiter error", zap.Error(err))
 			continue
 		}
-
+		<-inflightCh
 		wg.Add(1)
 		go func(index uint32) {
 			defer wg.Done()
+			defer func() {
+				inflightCh <- struct{}{}
+			}()
 			// Create unique client ID
 			clientID := fmt.Sprintf("%s-%d", m.optionsCtx.ClientPrefix, index)
 			serverIndex := index % uint32(len(m.optionsCtx.Servers))
@@ -107,7 +116,9 @@ func (m *ConnectionManager) RunConnections() error {
 				SetKeepAlive(time.Duration(m.optionsCtx.KeepAliveSeconds) * time.Second).
 				SetConnectTimeout(time.Duration(m.optionsCtx.ConnectTimeout) * time.Second).
 				SetWriteTimeout(time.Duration(m.optionsCtx.WriteTimeout) * time.Second).
-				SetAutoReconnect(m.optionsCtx.AutoReconnect)
+				SetAutoReconnect(m.optionsCtx.AutoReconnect).
+				SetConnectRetry(m.optionsCtx.ConnectRetry).
+				SetConnectRetryInterval(time.Duration(m.optionsCtx.ConnectRetryInterval) * time.Second)
 
 			// Configure TLS if needed
 			if m.optionsCtx.CaCertFile != "" || m.optionsCtx.ClientCertFile != "" {
@@ -149,14 +160,18 @@ func (m *ConnectionManager) RunConnections() error {
 				m.log.Debug("Client connected",
 					zap.String("client_id", clientID),
 					zap.String("broker", serverAddr))
+				m.clientsMutex.Lock()
+				m.activeClients = append(m.activeClients, c)
+				m.clientsMutex.Unlock()
 				metrics.MQTTConnections.WithLabelValues(serverAddr).Inc()
 				metrics.MQTTNewConnections.WithLabelValues(serverAddr).Inc()
-				if m.optionsCtx.WaitForClients {
-					<-progressDone
-				}
 				onceConnected.Do(func() {
 					close(onceConnectedDone) // <--- Added this line
 				})
+				if m.optionsCtx.WaitForClients {
+					<-progressDone
+				}
+
 				if m.optionsCtx.OnConnect != nil {
 					m.optionsCtx.OnConnect(c, index)
 				}
@@ -184,9 +199,6 @@ func (m *ConnectionManager) RunConnections() error {
 					return
 				}
 				metrics.MQTTConnectionTime.Observe(time.Since(startTime).Seconds())
-				m.clientsMutex.Lock()
-				m.activeClients = append(m.activeClients, client)
-				m.clientsMutex.Unlock()
 			} else {
 				m.log.Error("Connection timeout",
 					zap.String("client_id", clientID))
@@ -199,12 +211,12 @@ func (m *ConnectionManager) RunConnections() error {
 
 	// Wait for all goroutines to complete
 	wg.Wait()
+
+	<-onceConnectedDone
 	if len(m.activeClients) == 0 {
 		return errors.New("no active clients")
 	}
-	<-onceConnectedDone
 	close(progressDone)
-
 
 	m.log.Info("All clients connected",
 		zap.Int("total_clients", len(m.activeClients)))
