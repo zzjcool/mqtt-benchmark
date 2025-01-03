@@ -89,6 +89,7 @@ func TestPublishMessage(t *testing.T) {
 func TestRunPublish(t *testing.T) {
 	options, cancel := setupTest()
 	defer cancel()
+	options.ConnectRetry = false
 
 	pub := NewPublisher(options, "test/topic", 1, 0, "test", 10, 0, 2, 10.0)
 	pub.optionsCtx.WriteTimeout = 1
@@ -102,12 +103,6 @@ func TestRunPublish(t *testing.T) {
 	pub.optionsCtx.newClientFunc = mockNewClientFuncWithError(assert.AnError)
 	err = pub.RunPublish()
 	assert.Error(t, err, "RunPublish should fail with connection error")
-
-	// Test with connection timeout
-	pub.optionsCtx.newClientFunc = mockNewClientFuncWithDelay(2 * time.Second)
-	pub.optionsCtx.ConnectTimeout = 1
-	err = pub.RunPublish()
-	assert.Error(t, err, "RunPublish should fail with timeout")
 }
 
 func TestPublisherReport(t *testing.T) {

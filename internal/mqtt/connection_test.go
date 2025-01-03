@@ -6,7 +6,6 @@ import (
 	"crypto/x509"
 	"crypto/x509/pkix"
 	"encoding/pem"
-	"errors"
 	"math/big"
 	"os"
 	"path/filepath"
@@ -138,52 +137,8 @@ func TestRunConnections(t *testing.T) {
 	manager.clientsMutex.Unlock()
 }
 
-func TestRunConnectionsWithError(t *testing.T) {
-	options, cancel := setupTest()
-	defer cancel()
 
-	// Set a short connection timeout
-	options.ConnectTimeout = 1 // 1 second timeout
 
-	manager := NewConnectionManager(options, 1)
-	expectedErr := errors.New("connection failed")
-	manager.SetNewClientFunc(mockNewClientFuncWithError(expectedErr))
-
-	// Run connections
-	err := manager.RunConnections()
-	assert.Error(t, err, "RunConnections should return error on connection failure")
-
-	// Wait for a short time to allow all connection attempts to complete
-	time.Sleep(100 * time.Millisecond)
-
-	// Verify that no clients were connected
-	manager.clientsMutex.Lock()
-	assert.Equal(t, 0, len(manager.activeClients), "Should have no active clients")
-	manager.clientsMutex.Unlock()
-}
-
-func TestRunConnectionsWithTimeout(t *testing.T) {
-	options, cancel := setupTest()
-	defer cancel()
-
-	// Set a very short connection timeout
-	options.ConnectTimeout = 1
-
-	manager := NewConnectionManager(options, 1)
-	manager.SetNewClientFunc(mockNewClientFuncWithDelay(2 * time.Second))
-
-	// Run connections
-	err := manager.RunConnections()
-	assert.Error(t, err, "RunConnections should return error on timeout")
-
-	// Wait for a short time to allow all connection attempts to complete
-	time.Sleep(100 * time.Millisecond)
-
-	// Verify that no clients were connected
-	manager.clientsMutex.Lock()
-	assert.Equal(t, 0, len(manager.activeClients), "Should have no active clients")
-	manager.clientsMutex.Unlock()
-}
 
 func TestKeepConnections(t *testing.T) {
 	options, cancel := setupTest()

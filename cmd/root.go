@@ -38,6 +38,7 @@ const (
 	FlagClientCertFile = "client-cert-file"
 	FlagClientKeyFile  = "client-key-file"
 	FlagSkipVerify     = "skip-verify"
+	FlagAutoReconnect  = "auto-reconnect"
 
 	FlagTopic          = "topic"
 	FlagTopicNum       = "topic-num"
@@ -138,6 +139,7 @@ func init() {
 	rootCmd.PersistentFlags().IntP(FlagConnRate, "R", 0, "connection rate(/s), default: 0")
 	rootCmd.PersistentFlags().Int(FlagConnectTimeout, 10, "Connection timeout in seconds")
 	rootCmd.PersistentFlags().Int(FlagWriteTimeout, 5, "Write timeout in seconds")
+	rootCmd.PersistentFlags().Bool(FlagAutoReconnect, true, "Enable auto-reconnect")
 
 	// Add TLS configuration flags
 	rootCmd.PersistentFlags().String(FlagCaCertFile, "", "Path to CA certificate file")
@@ -170,6 +172,7 @@ func fillMqttOptions(cmd *cobra.Command) *mqtt.OptionsCtx {
 	writeTimeout, _ := cmd.Flags().GetInt(FlagWriteTimeout)
 	inflight, _ := cmd.Flags().GetInt(FlagInflight)
 	waitForClients, _ := cmd.Flags().GetBool(FlagWaitForClients)
+	autoReconnect, _ := cmd.Flags().GetBool(FlagAutoReconnect)
 
 	// Get TLS configuration flags
 	caCertFile, _ := cmd.Flags().GetString(FlagCaCertFile)
@@ -188,7 +191,7 @@ func fillMqttOptions(cmd *cobra.Command) *mqtt.OptionsCtx {
 		ClientPrefix: clientPrefix,
 		ConnRate:     connRate,
 
-		AutoReconnect:        true,
+		AutoReconnect:        autoReconnect,
 		CleanSession:         cleanSession,
 		KeepAliveSeconds:     keepAlive,
 		ConnectTimeout:       connectTimeout,

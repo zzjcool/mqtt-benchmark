@@ -65,6 +65,12 @@ func (m *ConnectionManager) RunConnections() error {
 		return errors.New("no active clients")
 	}
 
+	go func() {
+		<-m.optionsCtx.Done()
+		m.log.Debug("Connection manager cancelled")
+		m.DisconnectAll()
+	}()
+
 	// Create rate limiter for connection attempts
 	limiter := rate.NewLimiter(rate.Limit(m.optionsCtx.ConnRate), 1)
 
@@ -77,6 +83,8 @@ func (m *ConnectionManager) RunConnections() error {
 
 	onceConnected := sync.Once{}
 	onceConnectedDone := make(chan bool)
+
+	errorCh := make(chan error, 1)
 
 	inflightCh := make(chan struct{}, m.optionsCtx.ConnRate)
 	// Initialize inflightCh with tokens
@@ -94,13 +102,16 @@ func (m *ConnectionManager) RunConnections() error {
 			m.log.Error("Rate limiter error", zap.Error(err))
 			continue
 		}
-		<-inflightCh
+		select {
+		case <-m.optionsCtx.Done():
+			return nil
+		case <-inflightCh:
+		case err := <-errorCh:
+			return err
+		}
+
 		wg.Add(1)
 		go func(index uint32) {
-			defer wg.Done()
-			defer func() {
-				inflightCh <- struct{}{}
-			}()
 			// Create unique client ID
 			clientID := fmt.Sprintf("%s-%d", m.optionsCtx.ClientPrefix, index)
 			serverIndex := index % uint32(len(m.optionsCtx.Servers))
@@ -118,6 +129,7 @@ func (m *ConnectionManager) RunConnections() error {
 				SetWriteTimeout(time.Duration(m.optionsCtx.WriteTimeout) * time.Second).
 				SetAutoReconnect(m.optionsCtx.AutoReconnect).
 				SetMaxResumePubInFlight(m.optionsCtx.Inflight).
+				SetResumeSubs(true).
 				SetConnectRetry(m.optionsCtx.ConnectRetry).
 				SetConnectRetryInterval(time.Duration(m.optionsCtx.ConnectRetryInterval) * time.Second)
 
@@ -126,6 +138,7 @@ func (m *ConnectionManager) RunConnections() error {
 				tlsConfig, err := m.createTLSConfig(clientID)
 				if err != nil {
 					m.log.Error("Failed to create TLS config", zap.Error(err))
+					errorCh <- err
 					return
 				}
 				opts.SetTLSConfig(tlsConfig)
@@ -156,22 +169,32 @@ func (m *ConnectionManager) RunConnections() error {
 				return tlsCfg
 			}
 
+			firstConnect := sync.Once{}
+
 			// Set connect handler
 			opts.OnConnect = func(c mqtt.Client) {
 				m.log.Debug("Client connected",
 					zap.String("client_id", clientID),
 					zap.String("broker", serverAddr))
-				m.clientsMutex.Lock()
-				m.activeClients = append(m.activeClients, c)
-				m.clientsMutex.Unlock()
 				metrics.MQTTConnections.WithLabelValues(serverAddr).Inc()
 				metrics.MQTTNewConnections.WithLabelValues(serverAddr).Inc()
 				onceConnected.Do(func() {
-					close(onceConnectedDone) // <--- Added this line
+					close(onceConnectedDone)
 				})
 				if m.optionsCtx.WaitForClients {
 					<-progressDone
 				}
+
+				firstConnect.Do(func() {
+					m.clientsMutex.Lock()
+					wg.Done()
+					inflightCh <- struct{}{}
+					m.activeClients = append(m.activeClients, c)
+					m.clientsMutex.Unlock()
+					if m.optionsCtx.OnFirstConnect != nil {
+						m.optionsCtx.OnFirstConnect(c, index)
+					}
+				})
 
 				if m.optionsCtx.OnConnect != nil {
 					m.optionsCtx.OnConnect(c, index)
@@ -185,18 +208,28 @@ func (m *ConnectionManager) RunConnections() error {
 					zap.Error(err))
 				metrics.MQTTConnectionErrors.WithLabelValues(serverAddr, metrics.MQTTConnectionLostErrors).Inc()
 				metrics.MQTTConnections.WithLabelValues(serverAddr).Dec()
+				if m.optionsCtx.OnConnectionLost != nil {
+					m.optionsCtx.OnConnectionLost(c, err)
+				}
 			}
 
 			// Create and connect client
 			client := m.optionsCtx.newClientFunc(opts)
 			startTime := time.Now()
 			token := client.Connect()
-			if token.WaitTimeout(time.Duration(m.optionsCtx.ConnectTimeout) * time.Second) {
+
+			waitfunc := func() bool { return token.WaitTimeout(time.Duration(m.optionsCtx.ConnectTimeout) * time.Second) }
+			if m.optionsCtx.AutoReconnect {
+				waitfunc = func() bool { return token.Wait() }
+			}
+
+			if waitfunc() {
 				if token.Error() != nil {
 					m.log.Error("Failed to connect",
 						zap.String("client_id", clientID),
 						zap.Error(token.Error()))
 					metrics.MQTTConnectionErrors.WithLabelValues(serverAddr, metrics.MQTTConnectionNetworkErrors).Inc()
+					errorCh <- token.Error()
 					return
 				}
 				metrics.MQTTConnectionTime.Observe(time.Since(startTime).Seconds())
@@ -204,14 +237,25 @@ func (m *ConnectionManager) RunConnections() error {
 				m.log.Error("Connection timeout",
 					zap.String("client_id", clientID))
 				metrics.MQTTConnectionErrors.WithLabelValues(serverAddr, metrics.MQTTConnectionTimeoutErrors).Inc()
-
+				errorCh <- errors.New("connection timeout")
 				return
 			}
 		}(i)
 	}
 
-	// Wait for all goroutines to complete
-	wg.Wait()
+	done := make(chan struct{})
+	go func() {
+		wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-m.optionsCtx.Done():
+		return nil
+	case <-done:
+	case err := <-errorCh:
+		return err
+	}
 
 	<-onceConnectedDone
 	if len(m.activeClients) == 0 {

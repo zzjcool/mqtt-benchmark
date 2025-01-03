@@ -28,8 +28,8 @@ type OptionsCtx struct {
 	ConnectTimeout       int  // Connection timeout in seconds
 	ConnectRetry         bool // Whether to retry connection
 	WaitForClients       bool // Whether to wait for other clients to be ready
-	Inflight            int  // Maximum inflight messages for QoS 1 and 2
-	WriteTimeout        int  // Write timeout in seconds
+	Inflight             int  // Maximum inflight messages for QoS 1 and 2
+	WriteTimeout         int  // Write timeout in seconds
 
 	// TLS Configuration
 	CaCertFile     string // Path to CA certificate file
@@ -39,7 +39,19 @@ type OptionsCtx struct {
 	SkipVerify     bool   // Skip server certificate verification
 
 	OnConnectAttempt func(broker *url.URL, tlsCfg *tls.Config) *tls.Config
+	OnFirstConnect   func(client mqtt.Client, idx uint32)
 	OnConnect        func(client mqtt.Client, idx uint32)
+	OnConnectionLost func(client mqtt.Client, err error)
 
 	newClientFunc NewClientFunc
+}
+
+func (o *OptionsCtx) IsDropConnection(c mqtt.Client) bool {
+	op := c.OptionsReader()
+	if !op.AutoReconnect() {
+		if !c.IsConnected() {
+			return true
+		}
+	}
+	return false
 }

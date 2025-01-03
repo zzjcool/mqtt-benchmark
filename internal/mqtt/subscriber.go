@@ -1,7 +1,10 @@
 package mqtt
 
 import (
+	"context"
+	"errors"
 	"fmt"
+	"sync"
 	"sync/atomic"
 	"time"
 
@@ -15,6 +18,7 @@ import (
 
 // Subscriber handles MQTT message subscription operations
 type Subscriber struct {
+	wg             sync.WaitGroup
 	optionsCtx     *OptionsCtx
 	topicGenerator *TopicGenerator
 	qos            int
@@ -55,6 +59,8 @@ func (s *Subscriber) RunSubscribe() error {
 	// Create connection manager with auto reconnect enabled
 	s.optionsCtx.ConnectRetryInterval = 5 // 5 seconds retry interval
 	s.optionsCtx.OnConnect = s.handleClientConnect
+	s.optionsCtx.OnConnectionLost = s.handleClientConnectionLost
+	s.optionsCtx.OnFirstConnect = s.handleClientConnectFirst
 
 	s.report()
 	connManager := NewConnectionManager(s.optionsCtx, 0)
@@ -63,12 +69,39 @@ func (s *Subscriber) RunSubscribe() error {
 	}
 
 	defer connManager.DisconnectAll()
+	done := make(chan struct{})
 
-	<-s.optionsCtx.Done()
+	go func() {
+		s.wg.Wait()
+		close(done)
+	}()
+
+	select {
+	case <-done:
+		s.log.Info("Subscribe test completed",
+			zap.Int64("total_messages_received", atomic.LoadInt64(&s.msgCount)))
+	case <-s.optionsCtx.Done():
+	}
 
 	s.log.Info("Subscribe test completed",
 		zap.Int64("total_messages_received", atomic.LoadInt64(&s.msgCount)))
-	return nil
+
+	if errors.Is(s.optionsCtx.Err(), context.Canceled) {
+		return nil
+	}
+	return s.optionsCtx.Err()
+}
+
+func (s *Subscriber) handleClientConnectionLost(client mqtt.Client, err error) {
+	// op := client.OptionsReader()
+	// TODO wg.Done() let client can quit
+	if s.optionsCtx.IsDropConnection(client) {
+		s.wg.Done()
+	}
+}
+
+func (s *Subscriber) handleClientConnectFirst(client mqtt.Client, idx uint32) {
+	s.wg.Add(1)
 }
 
 func (s *Subscriber) handleClientConnect(client mqtt.Client, idx uint32) {

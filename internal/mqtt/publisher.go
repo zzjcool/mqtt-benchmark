@@ -195,6 +195,11 @@ func (p *Publisher) handleClientConnect(client mqtt.Client, idx uint32) {
 			p.log.Debug("Publisher goroutine cancelled", zap.String("client_id", clientID))
 			return
 		default:
+			if p.optionsCtx.IsDropConnection(client) {
+				p.log.Debug("Client is not connected, stop publishing",
+					zap.String("client_id", clientID))
+				return
+			}
 			// Wait for rate limiter
 			if err := limiter.Wait(p.optionsCtx); err != nil {
 				if errors.Is(err, p.optionsCtx.Err()) {
@@ -255,7 +260,7 @@ func (p *Publisher) RunPublish() error {
 	// Create connection manager with auto reconnect enabled
 	p.optionsCtx.ConnectRetryInterval = 5 // 5 seconds retry interval
 
-	p.optionsCtx.OnConnect = p.handleClientConnect
+	p.optionsCtx.OnFirstConnect = p.handleClientConnect
 
 	p.report()
 

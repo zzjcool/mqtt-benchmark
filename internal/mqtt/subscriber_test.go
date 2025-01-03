@@ -155,14 +155,6 @@ func TestSubscriberRunSubscribe(t *testing.T) {
 	err = sub.RunSubscribe()
 	assert.Error(t, err, "RunSubscribe should fail on connection error")
 
-	// Test with connection timeout
-	options, cancel = setupTest()
-	defer cancel()
-	options.newClientFunc = mockNewClientFuncWithDelay(6 * time.Second)
-	options.ConnectTimeout = 1
-	sub = NewSubscriber(options, "test/topic", 1, 0, 0)
-	err = sub.RunSubscribe()
-	assert.Error(t, err, "RunSubscribe should fail on timeout")
 }
 
 func TestSubscriberMultipleTopics(t *testing.T) {

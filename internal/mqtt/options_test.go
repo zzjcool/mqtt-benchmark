@@ -99,7 +99,7 @@ func TestOptionsCtx(t *testing.T) {
 				opts.OnConnectAttempt = func(broker *url.URL, tlsCfg *tls.Config) *tls.Config {
 					return tlsCfg
 				}
-				opts.OnConnect = func(client mqtt.Client, idx uint32) {}
+				opts.OnFirstConnect = func(client mqtt.Client, idx uint32) {}
 				opts.newClientFunc = func(opts *mqtt.ClientOptions) mqtt.Client {
 					return nil
 				}
@@ -107,7 +107,7 @@ func TestOptionsCtx(t *testing.T) {
 			},
 			validate: func(t *testing.T, opts *OptionsCtx) {
 				assert.NotNil(t, opts.OnConnectAttempt)
-				assert.NotNil(t, opts.OnConnect)
+				assert.NotNil(t, opts.OnFirstConnect)
 				assert.NotNil(t, opts.newClientFunc)
 			},
 		},
