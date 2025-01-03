@@ -148,10 +148,6 @@ func (m *ConnectionManager) RunConnections() error {
 				opts.SetTLSConfig(m.optionsCtx.OnConnectAttempt(nil, opts.TLSConfig))
 			}
 
-			opts.SetConnectionLostHandler(func(c mqtt.Client, err error) {
-
-			})
-
 			opts.OnReconnecting = func(c mqtt.Client, co *mqtt.ClientOptions) {
 				m.log.Debug("Client reconnecting",
 					zap.String("client_id", clientID),

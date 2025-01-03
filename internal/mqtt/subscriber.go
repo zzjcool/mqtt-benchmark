@@ -20,11 +20,12 @@ import (
 type Subscriber struct {
 	wg             sync.WaitGroup
 	optionsCtx     *OptionsCtx
-	topicGenerator *TopicGenerator
 	qos            int
 	timeout        time.Duration
 	msgCount       int64
 	log            *zap.Logger
+	topic          string
+	topicNum       int
 	parseTimestamp bool // Parse timestamp from payload
 }
 
@@ -32,10 +33,11 @@ type Subscriber struct {
 func NewSubscriber(options *OptionsCtx, topic string, topicNum int, clientIndex uint32, qos int) *Subscriber {
 	return &Subscriber{
 		optionsCtx:     options,
-		topicGenerator: NewTopicGenerator(topic, topicNum, clientIndex),
 		qos:            qos,
 		timeout:        5 * time.Second,
 		log:            logger.GetLogger(),
+		topic:          topic,
+		topicNum:       topicNum,
 		parseTimestamp: false,
 	}
 }
@@ -53,7 +55,7 @@ func (s *Subscriber) SetParseTimestamp(parseTimestamp bool) {
 // RunSubscribe starts the subscription process
 func (s *Subscriber) RunSubscribe() error {
 	s.log.Info("Starting subscribe test",
-		zap.String("topic", s.topicGenerator.GetTopic()),
+		zap.String("topic", s.topic),
 		zap.Int("qos", s.qos))
 
 	// Create connection manager with auto reconnect enabled
@@ -106,7 +108,7 @@ func (s *Subscriber) handleClientConnectFirst(client mqtt.Client, idx uint32) {
 
 func (s *Subscriber) handleClientConnect(client mqtt.Client, idx uint32) {
 	// Create a new TopicGenerator for each client with its own clientID
-	clientTopicGen := NewTopicGenerator(s.topicGenerator.TopicTemplate, s.topicGenerator.TopicNum, idx)
+	clientTopicGen := NewTopicGenerator(s.topic, s.topicNum, idx)
 	s.log.Debug("Subscriber goroutine started",
 		zap.Uint32("client_id", idx))
 	metrics.MQTTActiveSubscribers.Inc()

@@ -16,18 +16,18 @@ import (
 
 // Publisher handles MQTT message publishing operations
 type Publisher struct {
-	optionsCtx     *OptionsCtx
-	topicGenerator *TopicGenerator
-	payload        string
-	payloadSize    int
-	qos            int
-	count          int
-	rate           float64 // Messages per second per client
-	log            *zap.Logger
-	withTimestamp  bool // Add timestamp to payload
-	retain         bool
-	waitForClients bool
-	inflight       int // Maximum inflight messages per client for QoS 1 and 2
+	optionsCtx    *OptionsCtx
+	payload       string
+	payloadSize   int
+	qos           int
+	count         int
+	rate          float64 // Messages per second per client
+	log           *zap.Logger
+	withTimestamp bool // Add timestamp to payload
+	retain        bool
+	inflight      int // Maximum inflight messages per client for QoS 1 and 2
+	topic         string
+	topicNum      int
 
 	wg       sync.WaitGroup
 	msgCount int64
@@ -42,20 +42,19 @@ func NewPublisher(options *OptionsCtx, topic string, topicNum int, clientIndex u
 		panic("topicNum must be greater than 0")
 	}
 
-	topicGenerator := NewTopicGenerator(topic, topicNum, clientIndex)
-
 	return &Publisher{
-		optionsCtx:     options,
-		topicGenerator: topicGenerator,
-		payload:        payload,
-		payloadSize:    payloadSize,
-		qos:            qos,
-		count:          count,
-		rate:           rate,
-		log:            logger.GetLogger(),
-		withTimestamp:  false,
-		retain:         false,
-		inflight:       1,
+		optionsCtx:    options,
+		payload:       payload,
+		payloadSize:   payloadSize,
+		qos:           qos,
+		count:         count,
+		rate:          rate,
+		log:           logger.GetLogger(),
+		withTimestamp: false,
+		retain:        false,
+		topic:         topic,
+		topicNum:      topicNum,
+		inflight:      1,
 	}
 }
 
@@ -67,11 +66,6 @@ func (p *Publisher) SetWithTimestamp(withTimestamp bool) {
 // SetRetain sets whether to retain the message
 func (p *Publisher) SetRetain(retain bool) {
 	p.retain = retain
-}
-
-// SetWaitForClients sets whether to wait for other clients to be ready
-func (p *Publisher) SetWaitForClients(waitForClients bool) {
-	p.waitForClients = waitForClients
 }
 
 // SetInflight sets the maximum number of inflight messages
@@ -176,7 +170,7 @@ func (p *Publisher) handleClientConnect(client mqtt.Client, idx uint32) {
 	clientOptionsReader := client.OptionsReader()
 	clientID := clientOptionsReader.ClientID()
 	// Create a new TopicGenerator for each client with its own clientID
-	clientTopicGen := NewTopicGenerator(p.topicGenerator.TopicTemplate, p.topicGenerator.TopicNum, idx)
+	clientTopicGen := NewTopicGenerator(p.topic, p.topicNum, idx)
 	p.log.Debug("Publisher goroutine started",
 		zap.Uint32("client_id", idx))
 	limiter := rate.NewLimiter(rate.Limit(p.rate), 1)
@@ -251,7 +245,7 @@ func (p *Publisher) handleClientConnect(client mqtt.Client, idx uint32) {
 // RunPublish starts the publishing process
 func (p *Publisher) RunPublish() error {
 	p.log.Info("Starting publish test",
-		zap.String("topic", p.topicGenerator.TopicTemplate),
+		zap.String("topic", p.topic),
 		zap.Int("qos", p.qos),
 		zap.Int("count", p.count),
 		zap.Float64("rate", p.rate),
