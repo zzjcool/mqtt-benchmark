@@ -18,7 +18,6 @@ func TestNewSubscriber(t *testing.T) {
 	sub := NewSubscriber(options, "test/topic", 1, 0, 0)
 	assert.NotNil(t, sub, "Subscriber should not be nil")
 	assert.Equal(t, 0, sub.qos, "QoS should match")
-	assert.Equal(t, "test/topic", sub.topicGenerator.TopicTemplate, "Topic should match")
 	assert.Equal(t, 5*time.Second, sub.timeout, "Default timeout should be 5 seconds")
 	assert.False(t, sub.parseTimestamp, "ParseTimestamp should be false by default")
 
@@ -31,8 +30,6 @@ func TestNewSubscriber(t *testing.T) {
 
 	// Test with multiple topics
 	sub = NewSubscriber(options, "test/topic", 3, 0, 0)
-	topics := sub.topicGenerator.GetTopics()
-	assert.Equal(t, 3, len(topics), "Should generate 3 topics")
 
 	// Test timeout setting
 	timeout := 5 * time.Second
@@ -68,9 +65,9 @@ func TestSubscriberMessageHandling(t *testing.T) {
 
 	// Test cases for different message scenarios
 	testCases := []struct {
-		name           string
-		message        *mockMessage
-		expectedCount  int64
+		name          string
+		message       *mockMessage
+		expectedCount int64
 		expectLatency bool
 	}{
 		{
@@ -80,7 +77,7 @@ func TestSubscriberMessageHandling(t *testing.T) {
 				payload: []byte("test message"),
 				qos:     0,
 			},
-			expectedCount:  1,
+			expectedCount: 1,
 			expectLatency: false,
 		},
 		{
@@ -90,7 +87,7 @@ func TestSubscriberMessageHandling(t *testing.T) {
 				payload: []byte(time.Now().Format(time.RFC3339Nano) + "|test message"),
 				qos:     1,
 			},
-			expectedCount:  2,
+			expectedCount: 2,
 			expectLatency: true,
 		},
 		{
@@ -100,7 +97,7 @@ func TestSubscriberMessageHandling(t *testing.T) {
 				payload: []byte("invalid_timestamp|test message"),
 				qos:     1,
 			},
-			expectedCount:  3,
+			expectedCount: 3,
 			expectLatency: false,
 		},
 		{
@@ -110,7 +107,7 @@ func TestSubscriberMessageHandling(t *testing.T) {
 				payload: []byte{},
 				qos:     0,
 			},
-			expectedCount:  4,
+			expectedCount: 4,
 			expectLatency: false,
 		},
 		{
@@ -120,7 +117,7 @@ func TestSubscriberMessageHandling(t *testing.T) {
 				payload: []byte("test message"),
 				qos:     2,
 			},
-			expectedCount:  5,
+			expectedCount: 5,
 			expectLatency: false,
 		},
 	}
@@ -174,7 +171,8 @@ func TestSubscriberMultipleTopics(t *testing.T) {
 	handler := mockClient.opts.DefaultPublishHandler
 
 	// Test receiving messages on different topics
-	topics := sub.topicGenerator.GetTopics()
+	topicGenerator := NewTopicGenerator("test/topic/%d", 3, 0)
+	topics := topicGenerator.GetTopics()
 	for i, topic := range topics {
 		msg := &mockMessage{
 			topic:   topic,
@@ -212,4 +210,3 @@ func TestSubscriberContextCancellation(t *testing.T) {
 	// The report goroutine should exit when context is cancelled
 	sub.handleClientConnect(mockClient, 0)
 }
-

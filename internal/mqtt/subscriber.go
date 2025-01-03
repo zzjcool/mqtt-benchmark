@@ -27,6 +27,7 @@ type Subscriber struct {
 	topic          string
 	topicNum       int
 	parseTimestamp bool // Parse timestamp from payload
+	afterMessageReceived func(c mqtt.Client, msg mqtt.Message)
 }
 
 // NewSubscriber creates a new Subscriber
@@ -62,7 +63,7 @@ func (s *Subscriber) RunSubscribe() error {
 	s.optionsCtx.ConnectRetryInterval = 5 // 5 seconds retry interval
 	s.optionsCtx.OnConnect = s.handleClientConnect
 	s.optionsCtx.OnConnectionLost = s.handleClientConnectionLost
-	s.optionsCtx.OnFirstConnect = s.handleClientConnectFirst
+	s.optionsCtx.BeforeConnect = s.handleClientBeforeConnect
 
 	s.report()
 	connManager := NewConnectionManager(s.optionsCtx, 0)
@@ -83,6 +84,7 @@ func (s *Subscriber) RunSubscribe() error {
 		s.log.Info("Subscribe test completed",
 			zap.Int64("total_messages_received", atomic.LoadInt64(&s.msgCount)))
 	case <-s.optionsCtx.Done():
+		s.log.Info("Subscribe test cancelled")
 	}
 
 	s.log.Info("Subscribe test completed",
@@ -95,22 +97,25 @@ func (s *Subscriber) RunSubscribe() error {
 }
 
 func (s *Subscriber) handleClientConnectionLost(client mqtt.Client, err error) {
-	// op := client.OptionsReader()
-	// TODO wg.Done() let client can quit
+	op := client.OptionsReader()
+	s.log.Debug("Client connection lost",
+		zap.String("client_id", op.ClientID()),
+		zap.Error(err))
 	if s.optionsCtx.IsDropConnection(client) {
 		s.wg.Done()
 	}
 }
 
-func (s *Subscriber) handleClientConnectFirst(client mqtt.Client, idx uint32) {
+func (s *Subscriber) handleClientBeforeConnect(client mqtt.Client, idx uint32) {
 	s.wg.Add(1)
 }
 
 func (s *Subscriber) handleClientConnect(client mqtt.Client, idx uint32) {
 	// Create a new TopicGenerator for each client with its own clientID
 	clientTopicGen := NewTopicGenerator(s.topic, s.topicNum, idx)
+	op := client.OptionsReader()
 	s.log.Debug("Subscriber goroutine started",
-		zap.Uint32("client_id", idx))
+		zap.String("client_id", op.ClientID()))
 	metrics.MQTTActiveSubscribers.Inc()
 
 	// Create message handler
@@ -148,6 +153,10 @@ func (s *Subscriber) handleClientConnect(client mqtt.Client, idx uint32) {
 			zap.Int("payload_size", len(msg.Payload())),
 			zap.Float64("latency_ms", latency*1000),
 		)
+
+		if s.afterMessageReceived != nil {
+			s.afterMessageReceived(client, msg)
+		}
 	}
 
 	// Subscribe to all topics
@@ -158,17 +167,17 @@ func (s *Subscriber) handleClientConnect(client mqtt.Client, idx uint32) {
 			if err := token.Error(); err != nil {
 				metrics.MQTTSubscriptionErrors.WithLabelValues(topic, "subscription_failed").Inc()
 				s.log.Error("Failed to subscribe",
-					zap.Uint32("client_id", idx),
+					zap.String("client_id", op.ClientID()),
 					zap.Error(err))
 				return
 			}
 			s.log.Debug("Successfully subscribed",
-				zap.Uint32("client_id", idx),
+				zap.String("client_id", op.ClientID()),
 				zap.String("topic", topic))
 		} else {
 			metrics.MQTTSubscriptionErrors.WithLabelValues(topic, "timeout").Inc()
 			s.log.Error("Subscription timeout",
-				zap.Uint32("client_id", idx))
+				zap.String("client_id", op.ClientID()))
 			return
 		}
 	}

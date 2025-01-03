@@ -177,8 +177,9 @@ func (m *ConnectionManager) RunConnections() error {
 				onceConnected.Do(func() {
 					close(onceConnectedDone)
 				})
-				if m.optionsCtx.WaitForClients {
-					<-progressDone
+
+				if m.optionsCtx.BeforeConnect != nil {
+					m.optionsCtx.BeforeConnect(c, index)
 				}
 
 				firstConnect.Do(func() {
@@ -187,6 +188,11 @@ func (m *ConnectionManager) RunConnections() error {
 					inflightCh <- struct{}{}
 					m.activeClients = append(m.activeClients, c)
 					m.clientsMutex.Unlock()
+
+					if m.optionsCtx.WaitForClients {
+						<-progressDone
+					}
+
 					if m.optionsCtx.OnFirstConnect != nil {
 						m.optionsCtx.OnFirstConnect(c, index)
 					}

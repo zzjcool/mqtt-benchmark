@@ -28,9 +28,6 @@ func TestNewPublisher(t *testing.T) {
 	pub.SetRetain(true)
 	assert.True(t, pub.retain, "Retain should be true")
 
-	pub.SetWaitForClients(true)
-	assert.True(t, pub.waitForClients, "WaitForClients should be true")
-
 	pub.SetInflight(10)
 	assert.Equal(t, 10, pub.inflight, "Inflight should be updated")
 }
@@ -66,8 +63,9 @@ func TestPublishMessage(t *testing.T) {
 	mockClient := mockNewClientFunc(mqtt.NewClientOptions())
 	mockClient.Connect()
 
+	topicGenerator := NewTopicGenerator("test/topic", 1, 0)
 	// Test successful publish
-	errChan := pub.asyncPublish(mockClient, pub.topicGenerator)
+	errChan := pub.asyncPublish(mockClient, topicGenerator)
 	select {
 	case err := <-errChan:
 		assert.NoError(t, err, "Publish should succeed")
@@ -77,7 +75,7 @@ func TestPublishMessage(t *testing.T) {
 
 	// Test publish with disconnected client
 	mockClient.Disconnect(0)
-	errChan = pub.asyncPublish(mockClient, pub.topicGenerator)
+	errChan = pub.asyncPublish(mockClient, topicGenerator)
 	select {
 	case err := <-errChan:
 		assert.Error(t, err, "Publish should fail with disconnected client")

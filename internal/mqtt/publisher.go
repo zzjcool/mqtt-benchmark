@@ -162,9 +162,12 @@ func (p *Publisher) asyncPublish(client mqtt.Client, topicGen *TopicGenerator) c
 	return result
 }
 
+func (p *Publisher) handleClientBeforeConnect(client mqtt.Client, idx uint32) {
+	p.wg.Add(1)
+}
+
 // handleClientConnect handles the client connection and starts the publishing process
 func (p *Publisher) handleClientConnect(client mqtt.Client, idx uint32) {
-	p.wg.Add(1)
 	defer p.wg.Done()
 	metrics.MQTTActivePublishers.Inc()
 	clientOptionsReader := client.OptionsReader()
@@ -255,6 +258,7 @@ func (p *Publisher) RunPublish() error {
 	p.optionsCtx.ConnectRetryInterval = 5 // 5 seconds retry interval
 
 	p.optionsCtx.OnFirstConnect = p.handleClientConnect
+	p.optionsCtx.BeforeConnect = p.handleClientBeforeConnect
 
 	p.report()
 
