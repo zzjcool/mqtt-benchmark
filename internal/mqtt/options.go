@@ -44,6 +44,8 @@ type OptionsCtx struct {
 	OnConnect        func(client mqtt.Client, idx uint32)
 	OnConnectionLost func(client mqtt.Client, err error)
 
+	AfterAllClientsReady func(activeClients []mqtt.Client)
+
 	newClientFunc NewClientFunc
 }
 
@@ -55,4 +57,44 @@ func (o *OptionsCtx) IsDropConnection(c mqtt.Client) bool {
 		}
 	}
 	return false
+}
+
+func (o *OptionsCtx) Copy() *OptionsCtx {
+    newOpt := &OptionsCtx{
+        Context:              o.Context,
+        CancelFunc:           o.CancelFunc,
+        Servers:              make([]string, len(o.Servers)),
+        User:                 o.User,
+        Password:             o.Password,
+        KeepAliveSeconds:     o.KeepAliveSeconds,
+        ClientNum:            o.ClientNum,
+        ClientPrefix:         o.ClientPrefix,
+        ConnRate:             o.ConnRate,
+        QoS:                  o.QoS,
+        Retain:               o.Retain,
+        ClientIndex:          o.ClientIndex,
+        AutoReconnect:        o.AutoReconnect,
+        CleanSession:         o.CleanSession,
+        ConnectRetryInterval: o.ConnectRetryInterval,
+        ConnectTimeout:       o.ConnectTimeout,
+        ConnectRetry:         o.ConnectRetry,
+        WaitForClients:       o.WaitForClients,
+        Inflight:             o.Inflight,
+        WriteTimeout:         o.WriteTimeout,
+        CaCertFile:           o.CaCertFile,
+        CaKeyFile:            o.CaKeyFile,
+        ClientCertFile:       o.ClientCertFile,
+        ClientKeyFile:        o.ClientKeyFile,
+        SkipVerify:           o.SkipVerify,
+        OnConnectAttempt:     o.OnConnectAttempt,
+        OnFirstConnect:       o.OnFirstConnect,
+        BeforeConnect:        o.BeforeConnect,
+        OnConnect:            o.OnConnect,
+        OnConnectionLost:     o.OnConnectionLost,
+        newClientFunc:        o.newClientFunc,
+    }
+
+    copy(newOpt.Servers, o.Servers)
+
+    return newOpt
 }

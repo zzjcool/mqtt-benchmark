@@ -267,6 +267,10 @@ func (m *ConnectionManager) RunConnections() error {
 
 	m.log.Info("All clients connected",
 		zap.Int("total_clients", len(m.activeClients)))
+
+	if m.optionsCtx.AfterAllClientsReady != nil {
+		m.optionsCtx.AfterAllClientsReady(m.activeClients)
+	}
 	return nil
 }
 
